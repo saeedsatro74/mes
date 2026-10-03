@@ -203,7 +203,7 @@ export default function App() {
   const [adminSelectedCustomerId, setAdminSelectedCustomerId] = useState<string>('');
 
   // UI modal states
-  const [activeModal, setActiveModal] = useState<'buy' | 'sell' | 'check' | 'deposit' | 'withdraw' | 'add_customer' | 'receipt' | 'adjust_account' | 'company_stock' | 'market_price_settings' | 'change_password' | 'factory_reset' | 'manage_checks' | null>(null);
+  const [activeModal, setActiveModal] = useState<'buy' | 'sell' | 'check' | 'deposit' | 'withdraw' | 'add_customer' | 'receipt' | 'adjust_account' | 'company_stock' | 'market_price_settings' | 'change_password' | 'factory_reset' | 'manage_checks' | 'pdf_backup' | null>(null);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [checkToPass, setCheckToPass] = useState<Transaction | null>(null);
   const [isPassingCheck, setIsPassingCheck] = useState(false);
@@ -290,6 +290,12 @@ export default function App() {
   // State for factory reset & zeroing
   const [isResetting, setIsResetting] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState('');
+
+  // Backup State
+  const [lastBackupTime, setLastBackupTime] = useState<number>(() => {
+    const saved = localStorage.getItem('vateh_last_backup_time');
+    return saved ? parseInt(saved, 10) : 0;
+  });
 
   // Sync reference rates when they are modified
   useEffect(() => {
@@ -1484,6 +1490,353 @@ export default function App() {
     }
   };
 
+  // Open Standalone Print/PDF Export Window
+  const handleOpenPdfPrintWindow = () => {
+    const totalWalletCash = customers.reduce((sum, c) => sum + (c.walletCash || 0), 0);
+    const pendingChecksList = transactions.filter(t => t.status === 'pending' && (t.checkNumber || t.type === 'check_register'));
+    const pendingChecksTotalAmount = pendingChecksList.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+
+    const filename = `vateh-weekly-backup-${getTodayShamsi().replace(/\//g, '-')}`;
+
+    const reportHtml = `
+      <!DOCTYPE html>
+      <html dir="rtl" lang="fa">
+      <head>
+        <meta charset="utf-8">
+        <title>گزارش و بک‌آپ هفتگی سامانه معاملات مس واته - ${getTodayShamsi()}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700;900&display=swap" rel="stylesheet">
+        <style>
+          @page { size: A4 portrait; margin: 10mm; }
+          body {
+            font-family: 'Vazirmatn', sans-serif;
+            background: #ffffff;
+            color: #0f172a;
+            direction: rtl;
+            padding: 20px;
+            margin: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .no-print {
+            background: #0f172a;
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+          }
+          .no-print button {
+            background: #059669;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            font-family: 'Vazirmatn', sans-serif;
+            font-weight: 900;
+            font-size: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          }
+          .no-print button:hover { background: #047857; }
+          @media print {
+            .no-print { display: none !important; }
+            body { padding: 0; }
+          }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }
+          th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: right; }
+          th { background-color: #f1f5f9; font-weight: bold; }
+          .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 15px 0 20px 0; }
+          .card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; }
+        </style>
+      </head>
+      <body>
+        <div class="no-print">
+          <button onclick="window.print()">
+            🖨️ چاپ / ذخیره به عنوان فایل PDF (Print / Save as PDF)
+          </button>
+          <div style="font-size: 11px; margin-top: 8px; opacity: 0.85;">
+            راهنما: در پنجره بازشده مرورگر، بخش <strong>Destination (مقصد)</strong> را روی گزینه <strong>Save as PDF (ذخیره به عنوان PDF)</strong> قرار دهید.
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 15px;">
+          <div>
+            <h1 style="margin: 0; font-size: 18px; font-weight: 900; color: #0f172a;">گزارش و بک‌آپ هفتگی سامانه معاملات مس واته</h1>
+            <p style="margin: 4px 0 0 0; font-size: 11px; font-weight: 700; color: #b45309;">پلتفرم رسمی مدیریت معاملات لوله مسی و اسناد صیادی</p>
+          </div>
+          <div style="text-align: left; font-size: 11px; background: #f8fafc; padding: 8px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div><strong>تاریخ بک‌آپ:</strong> ${getTodayShamsi()}</div>
+            <div><strong>زمان ثبت:</strong> ${new Date().toLocaleTimeString('fa-IR')}</div>
+            <div><strong>صادرکننده:</strong> ${currentUser?.name || 'مدیریت'}</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card" style="background: #fffbeb; border-color: #fde68a;">
+            <div style="font-size: 10px; font-weight: 700; color: #92400e;">موجودی کیف پول:</div>
+            <div style="font-size: 13px; font-weight: 900; color: #78350f; margin-top: 4px;">${formatNumber(totalWalletCash)} تومان</div>
+          </div>
+          <div class="card" style="background: #fff7ed; border-color: #fed7aa;">
+            <div style="font-size: 10px; font-weight: 700; color: #9a3412;">موجودی انبار مس:</div>
+            <div style="font-size: 13px; font-weight: 900; color: #7c2d12; margin-top: 4px;">${formatKg(companyWarehouseCopper)} کیلوگرم</div>
+          </div>
+          <div class="card" style="background: #eff6ff; border-color: #bfdbfe;">
+            <div style="font-size: 10px; font-weight: 700; color: #1e40af;">چک‌های معوق:</div>
+            <div style="font-size: 13px; font-weight: 900; color: #1e3a8a; margin-top: 4px;">${formatNumber(pendingChecksTotalAmount)} تومان</div>
+          </div>
+          <div class="card">
+            <div style="font-size: 10px; font-weight: 700; color: #475569;">تعداد حساب‌ها:</div>
+            <div style="font-size: 13px; font-weight: 900; color: #0f172a; margin-top: 4px;">${customers.length} طرف حساب</div>
+          </div>
+        </div>
+
+        <h2 style="font-size: 12px; font-weight: 900; border-right: 4px solid #f59e0b; padding-right: 8px; margin: 15px 0 8px 0;">۱. دفتر کل تراز حساب‌ها و موجودی مشتریان</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>نام مشتری</th>
+              <th>شماره تماس</th>
+              <th style="text-align: center;">موجودی ریالی (تومان)</th>
+              <th style="text-align: center;">موجودی مس (کیلوگرم)</th>
+              <th style="text-align: center;">اسناد درراه</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${customers.map(c => `
+              <tr>
+                <td style="font-weight: 700;">${c.name}</td>
+                <td>${c.mobile || '-'}</td>
+                <td style="text-align: center; font-weight: 900; color: #047857;">${formatNumber(c.walletCash)}</td>
+                <td style="text-align: center; font-weight: 700; color: #c2410c;">${formatKg(c.copperBalance)}</td>
+                <td style="text-align: center;">${c.inTransitChecks ? formatNumber(c.inTransitChecks) + ' ت' : 'بدون چک'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        ${pendingChecksList.length > 0 ? `
+          <h2 style="font-size: 12px; font-weight: 900; border-right: 4px solid #2563eb; padding-right: 8px; margin: 15px 0 8px 0;">۲. چک‌های صیادی و اسناد درراه</h2>
+          <table>
+            <thead>
+              <tr style="background: #eff6ff;">
+                <th>شناسه صیادی</th>
+                <th>مشتری</th>
+                <th style="text-align: center;">مبلغ (تومان)</th>
+                <th style="text-align: center;">تاریخ ثبت</th>
+                <th>شرح</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pendingChecksList.map(ch => `
+                <tr>
+                  <td style="font-weight: 700; color: #1e40af;">${ch.checkNumber || '-'}</td>
+                  <td>${ch.customerName}</td>
+                  <td style="text-align: center; font-weight: 900;">${formatNumber(ch.totalAmount)}</td>
+                  <td style="text-align: center;">${ch.date}</td>
+                  <td>${ch.description || ''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+
+        <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #cbd5e1; display: grid; grid-template-columns: 1fr 1fr; text-align: center; font-size: 11px;">
+          <div>
+            <strong>امضا و مهر حسابداری:</strong>
+            <div style="height: 40px;"></div>
+          </div>
+          <div>
+            <strong>امضا و مهر مدیریت (واته):</strong>
+            <div style="height: 40px;"></div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(reportHtml);
+      printWindow.document.close();
+      setTimeout(() => {
+        try { printWindow.print(); } catch (e) {}
+      }, 400);
+    } else {
+      const blob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${filename}.html`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.print();
+    }
+  };
+
+  // Download PDF Backup file using standalone clean inline-styled HTML container
+  const handleDownloadPdfBackup = async () => {
+    const nowTs = Date.now();
+    localStorage.setItem('vateh_last_backup_time', nowTs.toString());
+    setLastBackupTime(nowTs);
+
+    const totalWalletCash = customers.reduce((sum, c) => sum + (c.walletCash || 0), 0);
+    const pendingChecksList = transactions.filter(t => t.status === 'pending' && (t.checkNumber || t.type === 'check_register'));
+    const pendingChecksTotalAmount = pendingChecksList.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+
+    // Create temporary offscreen element with pure inline hex styles (prevents html2canvas CSS parsing errors)
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '-9999px';
+    container.style.width = '790px';
+    container.style.padding = '20px';
+    container.style.background = '#ffffff';
+    container.style.color = '#0f172a';
+    container.style.fontFamily = "'Vazirmatn', 'Vazir', sans-serif";
+    container.style.direction = 'rtl';
+
+    container.innerHTML = `
+      <div style="font-family: 'Vazirmatn', sans-serif; padding: 15px; background: #ffffff; color: #0f172a; direction: rtl; font-size: 12px;">
+        <!-- Header -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 15px;">
+          <div>
+            <h1 style="margin: 0; font-size: 18px; font-weight: 900; color: #0f172a;">گزارش و بک‌آپ هفتگی سامانه معاملات مس واته</h1>
+            <p style="margin: 4px 0 0 0; font-size: 11px; font-weight: 700; color: #b45309;">پلتفرم رسمی مدیریت معاملات لوله مسی و اسناد صیادی</p>
+          </div>
+          <div style="text-align: left; font-size: 11px; font-family: sans-serif; background: #f8fafc; padding: 8px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div><strong>تاریخ بک‌آپ:</strong> ${getTodayShamsi()}</div>
+            <div><strong>زمان ثبت:</strong> ${new Date().toLocaleTimeString('fa-IR')}</div>
+            <div><strong>صادرکننده:</strong> ${currentUser?.name || 'مدیریت'}</div>
+          </div>
+        </div>
+
+        <!-- Metric Summary Cards -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px;">
+          <div style="background: #fffbeb; border: 1px solid #fde68a; padding: 10px; border-radius: 8px;">
+            <div style="font-size: 10px; font-weight: 700; color: #92400e;">موجودی کیف پول:</div>
+            <div style="font-size: 13px; font-weight: 900; color: #78350f; margin-top: 4px;">${formatNumber(totalWalletCash)} تومان</div>
+          </div>
+          <div style="background: #fff7ed; border: 1px solid #fed7aa; padding: 10px; border-radius: 8px;">
+            <div style="font-size: 10px; font-weight: 700; color: #9a3412;">موجودی انبار مس:</div>
+            <div style="font-size: 13px; font-weight: 900; color: #7c2d12; margin-top: 4px;">${formatKg(companyWarehouseCopper)} کیلوگرم</div>
+          </div>
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 10px; border-radius: 8px;">
+            <div style="font-size: 10px; font-weight: 700; color: #1e40af;">چک‌های معوق:</div>
+            <div style="font-size: 13px; font-weight: 900; color: #1e3a8a; margin-top: 4px;">${formatNumber(pendingChecksTotalAmount)} تومان</div>
+          </div>
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px;">
+            <div style="font-size: 10px; font-weight: 700; color: #475569;">تعداد حساب‌ها:</div>
+            <div style="font-size: 13px; font-weight: 900; color: #0f172a; margin-top: 4px;">${customers.length} طرف حساب</div>
+          </div>
+        </div>
+
+        <!-- Customers Table -->
+        <h2 style="font-size: 12px; font-weight: 900; border-right: 4px solid #f59e0b; padding-right: 8px; margin: 15px 0 8px 0;">۱. دفتر کل تراز حساب‌ها و موجودی مشتریان</h2>
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background: #f1f5f9; text-align: right;">
+              <th style="padding: 8px; border: 1px solid #cbd5e1;">نام مشتری</th>
+              <th style="padding: 8px; border: 1px solid #cbd5e1;">شماره تماس</th>
+              <th style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">موجودی ریالی (تومان)</th>
+              <th style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">موجودی مس (کیلوگرم)</th>
+              <th style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">اسناد درراه</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${customers.map(c => `
+              <tr>
+                <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 700;">${c.name}</td>
+                <td style="padding: 8px; border: 1px solid #cbd5e1;">${c.mobile || '-'}</td>
+                <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: 900; color: #047857;">${formatNumber(c.walletCash)}</td>
+                <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: 700; color: #c2410c;">${formatKg(c.copperBalance)}</td>
+                <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${c.inTransitChecks ? formatNumber(c.inTransitChecks) + ' ت' : 'بدون چک'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        ${pendingChecksList.length > 0 ? `
+          <h2 style="font-size: 12px; font-weight: 900; border-right: 4px solid #2563eb; padding-right: 8px; margin: 15px 0 8px 0;">۲. چک‌های صیادی و اسناد درراه</h2>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 20px;">
+            <thead>
+              <tr style="background: #eff6ff; text-align: right;">
+                <th style="padding: 8px; border: 1px solid #cbd5e1;">شناسه صیادی</th>
+                <th style="padding: 8px; border: 1px solid #cbd5e1;">مشتری</th>
+                <th style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">مبلغ (تومان)</th>
+                <th style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">تاریخ ثبت</th>
+                <th style="padding: 8px; border: 1px solid #cbd5e1;">شرح</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pendingChecksList.map(ch => `
+                <tr>
+                  <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 700; color: #1e40af;">${ch.checkNumber || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #cbd5e1;">${ch.customerName}</td>
+                  <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: 900;">${formatNumber(ch.totalAmount)}</td>
+                  <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${ch.date}</td>
+                  <td style="padding: 8px; border: 1px solid #cbd5e1;">${ch.description || ''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+
+        <!-- Footer -->
+        <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #cbd5e1; display: grid; grid-template-columns: 1fr 1fr; text-align: center; font-size: 11px;">
+          <div>
+            <strong>امضا و مهر حسابداری:</strong>
+            <div style="height: 40px;"></div>
+          </div>
+          <div>
+            <strong>امضا و مهر مدیریت (واته):</strong>
+            <div style="height: 40px;"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(container);
+
+    const filename = `vateh-weekly-backup-${getTodayShamsi().replace(/\//g, '-')}.pdf`;
+
+    try {
+      // @ts-ignore
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
+
+      const opt = {
+        margin: 6,
+        filename,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+
+      await html2pdf().set(opt).from(container).save();
+
+      setToastMessage({
+        title: 'دانلود موفق بک‌آپ PDF',
+        desc: `فایل پشتیبان هفتگی «${filename}» با موفقیت ایجاد و دانلود شد.`,
+        type: 'success'
+      });
+    } catch (err) {
+      console.error('PDF export fallback:', err);
+      // Fallback Blob download
+      const blob = new Blob([`<!DOCTYPE html><html dir="rtl" lang="fa"><head><meta charset="utf-8"/><title>${filename}</title><style>@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700;900&display=swap'); body { font-family: 'Vazirmatn', sans-serif; padding: 20px; }</style></head><body>${container.innerHTML}</body></html>`], { type: 'text/html;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename.replace('.pdf', '.html');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.print();
+    } finally {
+      if (document.body.contains(container)) {
+        document.body.removeChild(container);
+      }
+    }
+  };
+
   // Factory reset & zero all balances in state, localStorage, and Supabase
   const handleFactoryReset = async (mode: 'zero_balances' | 'full_factory_reset') => {
     setIsResetting(true);
@@ -1849,6 +2202,19 @@ export default function App() {
               </span>
             </div>
           </div>
+
+          {/* Weekly Backup button (Only for Admin - Small & Compact) */}
+          {currentUser.role === 'admin' && (
+            <button
+              type="button"
+              onClick={() => setActiveModal('pdf_backup')}
+              title="تولید و دانلود فایل PDF بک‌آپ هفتگی اطلاعات"
+              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-950 border border-blue-200 hover:border-blue-300 rounded-xl transition flex items-center gap-1 cursor-pointer shrink-0 font-extrabold text-[10px] md:text-xs shadow-2xs"
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span>بک‌آپ هفتگی (PDF)</span>
+            </button>
+          )}
 
           {/* Factory Reset button (Only for Admin - Small & Compact) */}
           {currentUser.role === 'admin' && (
@@ -2527,19 +2893,6 @@ export default function App() {
                         </td>
                         <td className="py-4 px-4 text-left">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Check Pass Button (تیک پاس شدن چک) */}
-                            {tx.status === 'pending' && (
-                              <button
-                                type="button"
-                                onClick={() => handlePassCheck(tx.id)}
-                                className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-2.5 py-1.5 rounded-lg transition text-[10px] shadow-sm cursor-pointer whitespace-nowrap"
-                                title="تیک پاس شدن چک: مبلغ به موجودی کیف پول واریز می‌شود"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
-                                <span>تیک پاس شدن چک</span>
-                              </button>
-                            )}
-
                             <button
                               onClick={() => {
                                 setSelectedTx(tx);
@@ -4518,6 +4871,30 @@ export default function App() {
                 </div>
               )}
 
+              {/* Backup & Restore Tools */}
+              <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-4 space-y-2 text-xs">
+                <div className="flex items-center justify-between font-black text-blue-950">
+                  <span className="flex items-center gap-1.5">
+                    <Download className="w-4 h-4 text-blue-600" />
+                    <span>پشتیبان‌گیری (بک‌آپ) و بازگردانی اطلاعات:</span>
+                  </span>
+                  <span className="text-[10px] text-blue-700 font-bold bg-blue-100 px-2 py-0.5 rounded-md">
+                    توصیه: هر هفته ۱ بار
+                  </span>
+                </div>
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveModal('pdf_backup')}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs shadow-sm cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4 text-blue-200" />
+                    <span>تولید و دانلود فایل PDF بک‌آپ هفتگی</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Action Buttons */}
               <div className="space-y-2.5 pt-2">
                 <button
@@ -4942,6 +5319,222 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 16. MODAL: "گزارش و بک‌آپ هفتگی مالی (فایل PDF)" */}
+      {activeModal === 'pdf_backup' && (() => {
+        const totalWalletCash = customers.reduce((sum, c) => sum + (c.walletCash || 0), 0);
+        const pendingChecksList = transactions.filter(t => t.status === 'pending' && (t.checkNumber || t.type === 'check_register'));
+        const pendingChecksTotalAmount = pendingChecksList.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 md:p-6 z-50 overflow-y-auto" dir="rtl">
+            <div className="bg-white rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl border border-slate-200 my-6 animate-in fade-in zoom-in-95 duration-150">
+              
+              {/* Action Header / Toolbar (Hidden on Print) */}
+              <div className="bg-slate-900 text-white p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 no-print">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">گزارش و فایل بک‌آپ هفتگی سامانه (PDF)</h3>
+                    <p className="text-xs text-blue-200/80">پیش‌نمایش سند رسمی پشتیبان مالی، حساب‌ها و موجودی انبار</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenPdfPrintWindow}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl transition flex items-center gap-2 text-xs shadow cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-emerald-200" />
+                    <span>خروجی و ذخیره PDF در مرورگر</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdfBackup}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 text-xs shadow-2xs cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-blue-200" />
+                    <span className="hidden sm:inline">دانلود فایل PDF</span>
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={() => setActiveModal(null)}
+                    className="text-slate-400 hover:text-white hover:bg-slate-800 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Printable Content Container */}
+              <div id="pdf-backup-report" className="p-6 md:p-8 space-y-6 max-h-[80vh] overflow-y-auto printable-area bg-white text-slate-900">
+                
+                {/* Document Official Header */}
+                <div className="flex justify-between items-start border-b-2 border-slate-900 pb-5">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black text-lg shadow">
+                        و
+                      </div>
+                      <div>
+                        <h1 className="text-lg font-black text-slate-950">گزارش و بک‌آپ هفتگی سامانه معاملات مس واته</h1>
+                        <span className="text-xs font-bold text-amber-800 block">پلتفرم مدیریت معاملات کاتد، لوله مسی و اسناد صیادی</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 pt-1">سند پشتیبان مالی رسمی دفتری جهت بایگانی هفتگی مدیریت</p>
+                  </div>
+
+                  <div className="text-left space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs font-mono">
+                    <div className="flex gap-2 justify-end text-slate-700">
+                      <span className="font-bold">{getTodayShamsi()}</span>
+                      <span className="text-slate-400">:تاریخ بک‌آپ</span>
+                    </div>
+                    <div className="flex gap-2 justify-end text-slate-700">
+                      <span className="font-bold">{new Date().toLocaleTimeString('fa-IR')}</span>
+                      <span className="text-slate-400">:زمان ثبت</span>
+                    </div>
+                    <div className="flex gap-2 justify-end text-slate-700">
+                      <span className="font-bold">{currentUser.name}</span>
+                      <span className="text-slate-400">:صادرکننده</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Summary Financial Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-200">
+                    <span className="text-[11px] font-bold text-amber-900 block">موجودی کیف پول ریالی:</span>
+                    <span className="text-sm md:text-base font-black text-amber-950 font-mono block mt-1">
+                      {formatNumber(totalWalletCash)} <span className="text-[10px] font-normal">تومان</span>
+                    </span>
+                  </div>
+
+                  <div className="bg-orange-50 p-3.5 rounded-2xl border border-orange-200">
+                    <span className="text-[11px] font-bold text-orange-900 block">موجودی انبار مس:</span>
+                    <span className="text-sm md:text-base font-black text-orange-950 font-mono block mt-1">
+                      {formatKg(companyWarehouseCopper)} <span className="text-[10px] font-normal">کیلوگرم</span>
+                    </span>
+                  </div>
+
+                  <div className="bg-blue-50 p-3.5 rounded-2xl border border-blue-200">
+                    <span className="text-[11px] font-bold text-blue-900 block">مجموع چک‌های صیادی معوق:</span>
+                    <span className="text-sm md:text-base font-black text-blue-950 font-mono block mt-1">
+                      {formatNumber(pendingChecksTotalAmount)} <span className="text-[10px] font-normal">تومان</span>
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-100 p-3.5 rounded-2xl border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-700 block">تعداد حساب‌های فعال:</span>
+                    <span className="text-sm md:text-base font-black text-slate-900 font-mono block mt-1">
+                      {customers.length} <span className="text-[10px] font-normal">طرف حساب</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Table 1: All Customer Balances Roster */}
+                <div className="space-y-2">
+                  <h2 className="text-xs font-black text-slate-900 flex items-center gap-1.5 border-r-4 border-amber-500 pr-2">
+                    <span>۱. دفتر کل تراز حساب‌ها و موجودی مشتریان</span>
+                  </h2>
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">نام مشتری</th>
+                          <th className="p-2.5">شماره تماس</th>
+                          <th className="p-2.5 text-center">موجودی ریالی (تومان)</th>
+                          <th className="p-2.5 text-center">موجودی مس (کیلوگرم)</th>
+                          <th className="p-2.5 text-center">چک‌های معوق</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {customers.map((c) => (
+                          <tr key={c.id} className="hover:bg-slate-50">
+                            <td className="p-2.5 font-bold text-slate-900">{c.name}</td>
+                            <td className="p-2.5 font-mono text-slate-600">{c.mobile || '-'}</td>
+                            <td className="p-2.5 text-center font-mono font-black text-emerald-700">
+                              {formatNumber(c.walletCash)}
+                            </td>
+                            <td className="p-2.5 text-center font-mono font-bold text-orange-700">
+                              {formatKg(c.copperBalance)}
+                            </td>
+                            <td className="p-2.5 text-center font-mono text-xs">
+                              {c.inTransitChecks ? (
+                                <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-bold">
+                                  {formatNumber(c.inTransitChecks)} تومان
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">بدون چک</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Table 2: Pending Sayadi Checks */}
+                {pendingChecksList.length > 0 && (
+                  <div className="space-y-2">
+                    <h2 className="text-xs font-black text-slate-900 flex items-center gap-1.5 border-r-4 border-blue-600 pr-2">
+                      <span>۲. اسناد درراه و چک‌های صیادی در انتظار وصول</span>
+                    </h2>
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-blue-50 text-blue-900 font-black border-b border-slate-200">
+                          <tr>
+                            <th className="p-2.5">شناسه صیادی</th>
+                            <th className="p-2.5">نام مشتری</th>
+                            <th className="p-2.5 text-center">مبلغ چک (تومان)</th>
+                            <th className="p-2.5 text-center">تاریخ ثبت/سررسید</th>
+                            <th className="p-2.5">شرح و نوع معامله</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {pendingChecksList.map((ch) => (
+                            <tr key={ch.id}>
+                              <td className="p-2.5 font-mono font-bold text-blue-900">{ch.checkNumber || '-'}</td>
+                              <td className="p-2.5 font-bold text-slate-900">{ch.customerName}</td>
+                              <td className="p-2.5 text-center font-mono font-black text-amber-900">
+                                {formatNumber(ch.totalAmount)}
+                              </td>
+                              <td className="p-2.5 text-center font-mono font-bold text-slate-700">{ch.date}</td>
+                              <td className="p-2.5 text-slate-600 text-[11px]">{ch.description}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Signatures & Footer Note */}
+                <div className="pt-6 border-t border-slate-300 grid grid-cols-2 text-center text-xs text-slate-700">
+                  <div className="space-y-8">
+                    <span className="font-bold block">محل مهر و امضای مدیر حسابداری:</span>
+                    <div className="h-10 border-b border-dashed border-slate-300 w-2/3 mx-auto"></div>
+                  </div>
+                  <div className="space-y-8">
+                    <span className="font-bold block">محل مهر و امضای مدیر عامل (واته):</span>
+                    <div className="h-10 border-b border-dashed border-slate-300 w-2/3 mx-auto"></div>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-400 text-center pt-2">
+                  این فایل رسمی به عنوان گزارش پشتیبان (بک‌آپ) هفتگی توسط سامانه اتوماتیک معاملات مس واته صادر گردیده است.
+                </div>
+
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

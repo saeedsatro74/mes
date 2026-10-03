@@ -1,1 +1,68 @@
 @import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;200;300;400;500;600;700;800;900&display=swap');
+
+@layer base {
+  :root {
+    font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, sans-serif;
+  }
+  
+  body, input, button, select, textarea {
+    font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, sans-serif !important;
+  }
+}
+
+* {
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, sans-serif;
+}
+
+/* Ensure font-mono also uses clean Vazirmatn for numbers */
+.font-mono {
+  font-family: 'Vazirmatn', 'Vazir', monospace !important;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  /* Hide headers, navigation, overlay buttons */
+  header, nav, footer, .no-print, button {
+    display: none !important;
+  }
+
+  /* Reset fixed modal containers so print handles full document height */
+  .fixed.inset-0, .backdrop-blur-sm {
+    position: static !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    inset: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .printable-area {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    color: black !important;
+  }
+}
+
