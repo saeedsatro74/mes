@@ -1,0 +1,6 @@
+{
+  "name": "واته - سامانه معاملات مس",
+  "description": "سامانه هوشمند خرید و فروش مس کاتد و مدیریت حساب‌های معاملاتی مشتریان",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
