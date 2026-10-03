@@ -1640,6 +1640,61 @@ export default function App() {
           </table>
         ` : ''}
 
+        <h2 style="font-size: 12px; font-weight: 900; border-right: 4px solid #059669; padding-right: 8px; margin: 20px 0 10px 0;">۳. دفتر ریز تراکنش‌ها و ریز اسناد مالی اشخاص</h2>
+        ${customers.map(cust => {
+          const custTxs = transactions.filter(t => t.customerId === cust.id);
+          if (custTxs.length === 0) return '';
+
+          return `
+            <div style="margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+              <div style="background: #f1f5f9; padding: 6px 12px; font-weight: 900; font-size: 11px; color: #0f172a; border-bottom: 1px solid #cbd5e1; display: flex; justify-content: space-between;">
+                <span>طرف حساب: <strong>${cust.name}</strong> (${cust.mobile || '-'})</span>
+                <span>تعداد سوابق: ${custTxs.length} فقره</span>
+              </div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 0;">
+                <thead>
+                  <tr style="background: #fafafa;">
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 15%;">تاریخ و زمان</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 15%;">نوع معامله</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 12%;">وزن مس (kg)</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 15%;">مبلغ کل (تومان)</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 15%;">کیف پول بعد معامله</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 28%;">شرح و شناسه سند</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${custTxs.map(tx => `
+                    <tr>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0;">${tx.date} ${tx.time ? `<br/><span style="color:#64748b; font-size: 9px;">${tx.time}</span>` : ''}</td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; font-weight: 700;">
+                        ${tx.type === 'buy' ? 'خرید لوله مسی' :
+                          tx.type === 'sell' ? 'فروش لوله مسی' :
+                          tx.type === 'deposit' ? 'شارژ کیف پول' :
+                          tx.type === 'withdraw' ? 'تسویه/برداشت' :
+                          tx.type === 'check_register' ? 'ثبت چک صیادی' :
+                          'اصلاح حساب'}
+                      </td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 700; color: #c2410c;">
+                        ${tx.amountKg ? formatKg(tx.amountKg) : '-'}
+                      </td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 900; color: #0f172a;">
+                        ${formatNumber(tx.totalAmount)}
+                      </td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 700; color: #047857;">
+                        ${tx.afterWalletCash !== undefined ? formatNumber(tx.afterWalletCash) + ' ت' : '-'}
+                      </td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; color: #475569; font-size: 10px;">
+                        ${tx.description || '-'}
+                        ${tx.checkNumber ? `<br/><strong style="color: #1e40af;">[صیادی: ${tx.checkNumber}]</strong>` : ''}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }).join('')}
+
         <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #cbd5e1; display: grid; grid-template-columns: 1fr 1fr; text-align: center; font-size: 11px;">
           <div>
             <strong>امضا و مهر حسابداری:</strong>
@@ -1780,6 +1835,61 @@ export default function App() {
             </tbody>
           </table>
         ` : ''}
+
+        <h2 style="font-size: 12px; font-weight: 900; border-right: 4px solid #059669; padding-right: 8px; margin: 20px 0 10px 0;">۳. دفتر ریز تراکنش‌ها و ریز اسناد مالی اشخاص</h2>
+        ${customers.map(cust => {
+          const custTxs = transactions.filter(t => t.customerId === cust.id);
+          if (custTxs.length === 0) return '';
+
+          return `
+            <div style="margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+              <div style="background: #f1f5f9; padding: 6px 12px; font-weight: 900; font-size: 11px; color: #0f172a; border-bottom: 1px solid #cbd5e1; display: flex; justify-content: space-between;">
+                <span>طرف حساب: <strong>${cust.name}</strong> (${cust.mobile || '-'})</span>
+                <span>تعداد سوابق: ${custTxs.length} فقره</span>
+              </div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 0;">
+                <thead>
+                  <tr style="background: #fafafa;">
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 15%;">تاریخ و زمان</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 15%;">نوع معامله</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 12%;">وزن مس (kg)</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 15%;">مبلغ کل (تومان)</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 15%;">کیف پول بعد معامله</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 28%;">شرح و شناسه سند</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${custTxs.map(tx => `
+                    <tr>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0;">${tx.date} ${tx.time ? `<br/><span style="color:#64748b; font-size: 9px;">${tx.time}</span>` : ''}</td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; font-weight: 700;">
+                        ${tx.type === 'buy' ? 'خرید لوله مسی' :
+                          tx.type === 'sell' ? 'فروش لوله مسی' :
+                          tx.type === 'deposit' ? 'شارژ کیف پول' :
+                          tx.type === 'withdraw' ? 'تسویه/برداشت' :
+                          tx.type === 'check_register' ? 'ثبت چک صیادی' :
+                          'اصلاح حساب'}
+                      </td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 700; color: #c2410c;">
+                        ${tx.amountKg ? formatKg(tx.amountKg) : '-'}
+                      </td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 900; color: #0f172a;">
+                        ${formatNumber(tx.totalAmount)}
+                      </td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 700; color: #047857;">
+                        ${tx.afterWalletCash !== undefined ? formatNumber(tx.afterWalletCash) + ' ت' : '-'}
+                      </td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; color: #475569; font-size: 10px;">
+                        ${tx.description || '-'}
+                        ${tx.checkNumber ? `<br/><strong style="color: #1e40af;">[صیادی: ${tx.checkNumber}]</strong>` : ''}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }).join('')}
 
         <!-- Footer -->
         <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #cbd5e1; display: grid; grid-template-columns: 1fr 1fr; text-align: center; font-size: 11px;">
@@ -5513,6 +5623,81 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
+                {/* Section 3: Detailed Transactions Ledger by Customer */}
+                <div className="space-y-3">
+                  <h2 className="text-xs font-black text-slate-900 flex items-center gap-1.5 border-r-4 border-emerald-600 pr-2">
+                    <span>۳. دفتر ریز تراکنش‌ها و ریز اسناد مالی اشخاص</span>
+                  </h2>
+
+                  {customers.map((cust) => {
+                    const custTxs = transactions.filter(t => t.customerId === cust.id);
+                    if (custTxs.length === 0) return null;
+
+                    return (
+                      <div key={cust.id} className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                        <div className="bg-slate-100 p-2.5 font-extrabold text-slate-900 flex justify-between items-center border-b border-slate-200">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                            <span>طرف حساب: {cust.name}</span>
+                            <span className="text-slate-500 font-mono text-[11px]">({cust.mobile || '-'})</span>
+                          </span>
+                          <span className="text-[11px] text-slate-600 font-bold bg-white px-2 py-0.5 rounded border border-slate-200">
+                            تعداد سوابق: {custTxs.length} فقره
+                          </span>
+                        </div>
+
+                        <table className="w-full text-right text-[11px]">
+                          <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                            <tr>
+                              <th className="p-2">تاریخ / زمان</th>
+                              <th className="p-2">نوع معامله</th>
+                              <th className="p-2 text-center">وزن مس (kg)</th>
+                              <th className="p-2 text-center">مبلغ کل (تومان)</th>
+                              <th className="p-2 text-center">کیف پول بعد معامله</th>
+                              <th className="p-2">شرح و شناسه سند</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {custTxs.map((tx) => (
+                              <tr key={tx.id} className="hover:bg-slate-50">
+                                <td className="p-2 font-mono text-slate-700">
+                                  {tx.date}
+                                  {tx.time && <span className="text-[10px] text-slate-400 block">{tx.time}</span>}
+                                </td>
+                                <td className="p-2 font-black text-slate-900">
+                                  {tx.type === 'buy' && 'خرید لوله مسی'}
+                                  {tx.type === 'sell' && 'فروش لوله مسی'}
+                                  {tx.type === 'deposit' && 'شارژ کیف پول'}
+                                  {tx.type === 'withdraw' && 'تسویه/برداشت'}
+                                  {tx.type === 'check_register' && 'ثبت چک صیادی'}
+                                  {tx.type === 'adjustment' && 'اصلاح حساب'}
+                                </td>
+                                <td className="p-2 text-center font-mono font-bold text-orange-800">
+                                  {tx.amountKg ? formatKg(tx.amountKg) : '-'}
+                                </td>
+                                <td className="p-2 text-center font-mono font-black text-slate-950">
+                                  {formatNumber(tx.totalAmount)}
+                                </td>
+                                <td className="p-2 text-center font-mono font-extrabold text-emerald-800">
+                                  {tx.afterWalletCash !== undefined ? `${formatNumber(tx.afterWalletCash)} ت` : '-'}
+                                </td>
+                                <td className="p-2 text-slate-600 text-[10px]">
+                                  {tx.description || '-'}
+                                  {tx.checkNumber && (
+                                    <span className="block font-mono font-bold text-blue-900 text-[10px] mt-0.5">
+                                      [شناسه صیادی: {tx.checkNumber}]
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
+                </div>
 
                 {/* Signatures & Footer Note */}
                 <div className="pt-6 border-t border-slate-300 grid grid-cols-2 text-center text-xs text-slate-700">
