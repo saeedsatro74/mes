@@ -37,9 +37,11 @@ import {
   CreditCard,
   Wallet,
   PieChart,
-  AlertTriangle
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 import { supabase, DbCustomer, DbTransaction, DbCompanySettings } from './lib/supabase';
+import { ShamsiDatePicker, toEnglishDigits, toPersianDigits, getTodayShamsi, getOffsetShamsiDate } from './components/ShamsiDatePicker';
 
 // Core Interfaces
 interface Customer {
@@ -79,25 +81,25 @@ const INITIAL_CUSTOMERS: Customer[] = [
     id: 'c1',
     name: 'جواد شکرالهی',
     mobile: '09127697501',
-    walletCash: 917370000,
-    copperBalance: 250.86,
-    sharePercentage: 35.6,
-    realizedProfit: 416555354,
-    profitChangePercent: 17.3,
-    averageBuyPrice: 2000000,
-    inTransitChecks: 514800000,
-    blockedCopper: 1,
+    walletCash: 0,
+    copperBalance: 0,
+    sharePercentage: 0,
+    realizedProfit: 0,
+    profitChangePercent: 0,
+    averageBuyPrice: 0,
+    inTransitChecks: 0,
+    blockedCopper: 0,
   },
   {
     id: 'c2',
     name: 'علی ظفری پور',
     mobile: '09134263654',
     walletCash: 0,
-    copperBalance: 310.94,
-    sharePercentage: 44.1,
-    realizedProfit: 8502093,
-    profitChangePercent: 0.9,
-    averageBuyPrice: 2120000,
+    copperBalance: 0,
+    sharePercentage: 0,
+    realizedProfit: 0,
+    profitChangePercent: 0,
+    averageBuyPrice: 0,
     inTransitChecks: 0,
     blockedCopper: 0,
   },
@@ -105,7 +107,7 @@ const INITIAL_CUSTOMERS: Customer[] = [
     id: 'c3',
     name: 'سعید صمیمی پور',
     mobile: '09379900697',
-    walletCash: 500000000,
+    walletCash: 0,
     copperBalance: 0,
     sharePercentage: 0,
     realizedProfit: 0,
@@ -119,102 +121,25 @@ const INITIAL_CUSTOMERS: Customer[] = [
     name: 'مرتضی محمدی',
     mobile: '09123456789',
     walletCash: 0,
-    copperBalance: 143.12,
-    sharePercentage: 20.3,
-    realizedProfit: 174560000,
-    profitChangePercent: 12.5,
-    averageBuyPrice: 1950000,
+    copperBalance: 0,
+    sharePercentage: 0,
+    realizedProfit: 0,
+    profitChangePercent: 0,
+    averageBuyPrice: 0,
     inTransitChecks: 0,
     blockedCopper: 0,
   }
 ];
 
-const INITIAL_TRANSACTIONS: Transaction[] = [
-  {
-    id: 't1',
-    customerId: 'c1',
-    customerName: 'جواد شکرالهی',
-    type: 'buy',
-    date: '۱۴۰۵/۰۶/۱۶',
-    time: '۰۹:۰۰:۳۶',
-    amountKg: 68.31,
-    ratePerKg: 3100000,
-    totalAmount: 211765000,
-    status: 'completed',
-    description: 'خرید لوله مسی - فروشنده انبار شرکت مس و اته',
-    afterWalletCash: 917370000,
-  },
-  {
-    id: 't2',
-    customerId: 'c1',
-    customerName: 'جواد شکرالهی',
-    type: 'sell',
-    date: '۱۴۰۵/۰۶/۱۵',
-    time: '۰۹:۰۰:۳۶',
-    amountKg: 29.10,
-    ratePerKg: 3200000,
-    totalAmount: 93120000,
-    status: 'completed',
-    description: 'فروش خارجی (به خریدار بیرونی)',
-    afterWalletCash: 1129135000,
-    profitVal: 15421111,
-  },
-  {
-    id: 't3',
-    customerId: 'c1',
-    customerName: 'جواد شکرالهی',
-    type: 'sell',
-    date: '۱۴۰۵/۰۶/۱۵',
-    time: '۰۹:۰۰:۳۶',
-    amountKg: 260,
-    ratePerKg: 2900000,
-    totalAmount: 754000000,
-    status: 'completed',
-    description: 'فروش به خارج (خریدار بیرونی) درخواست فروش ۲۶۰ کیلوگرم لوله مسی با نرخ ۲,۹۰۰,۰۰۰ تومان',
-    afterWalletCash: 1036015000,
-    profitVal: 59783118,
-  },
-  {
-    id: 't4',
-    customerId: 'c1',
-    customerName: 'جواد شکرالهی',
-    type: 'sell',
-    date: '۱۴۰۵/۰۶/۱۵',
-    time: '۰۹:۰۰:۳۶',
-    amountKg: 4.40,
-    ratePerKg: 2950000,
-    totalAmount: 12980000,
-    status: 'completed',
-    description: 'فروش لوله مسی (تحویل به شرکت) درخواست فروش ۴.۴۰ کیلوگرم لوله مسی با نرخ ۲,۹۵۰,۰۰۰ تومان',
-    afterWalletCash: 282015000,
-    profitVal: 1231714,
-  },
-  {
-    id: 't5',
-    customerId: 'c1',
-    customerName: 'جواد شکرالهی',
-    type: 'check_register',
-    date: '۱۴۰۵/۰۷/۰۵',
-    time: '۱۲:۳۰:۰۰',
-    totalAmount: 514800000,
-    status: 'completed',
-    description: 'سند اسناد درراه - ۱ چک مسدود لوله مسی',
-    checkNumber: '۴۲۰۴/۵۶۲/۱۲',
-    afterWalletCash: 917370000,
-  },
-  {
-    id: 't6',
-    customerId: 'c3',
-    customerName: 'سعید صمیمی پور',
-    type: 'deposit',
-    date: '۱۴۰۵/۰۶/۲۸',
-    time: '۱۲:۵۴:۲۹',
-    totalAmount: 500000000,
-    status: 'completed',
-    description: 'شارژ حساب (واریز) - تایید مدیر',
-    afterWalletCash: 500000000,
-  }
-];
+const INITIAL_TRANSACTIONS: Transaction[] = [];
+
+const getFutureShamsiDate = (days: number): string => getOffsetShamsiDate(days);
+
+const sanitizeDateInput = (val: string): string => {
+  if (!val) return '';
+  const eng = toEnglishDigits(val);
+  return eng.replace(/[^0-9/]/g, '');
+};
 
 export default function App() {
   // Authentication State
@@ -271,25 +196,31 @@ export default function App() {
   // Company Central Warehouse Copper (Persistent)
   const [companyWarehouseCopper, setCompanyWarehouseCopper] = useState<number>(() => {
     const saved = localStorage.getItem('vateh_company_warehouse_copper_v5');
-    return saved ? Number(saved) : 2000; // default 2000 kg (2 tons)
+    return saved ? Number(saved) : 0; // default 0 kg
   });
 
   // Navigation states
   const [adminSelectedCustomerId, setAdminSelectedCustomerId] = useState<string>('');
 
   // UI modal states
-  const [activeModal, setActiveModal] = useState<'buy' | 'sell' | 'check' | 'deposit' | 'withdraw' | 'add_customer' | 'receipt' | 'adjust_account' | 'company_stock' | 'market_price_settings' | 'change_password' | null>(null);
+  const [activeModal, setActiveModal] = useState<'buy' | 'sell' | 'check' | 'deposit' | 'withdraw' | 'add_customer' | 'receipt' | 'adjust_account' | 'company_stock' | 'market_price_settings' | 'change_password' | 'factory_reset' | 'manage_checks' | null>(null);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [checkToPass, setCheckToPass] = useState<Transaction | null>(null);
+  const [isPassingCheck, setIsPassingCheck] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ title: string; desc: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [checkbookTab, setCheckbookTab] = useState<'pending' | 'cleared'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [clientFilterType, setClientFilterType] = useState<'all' | 'copper' | 'cash'>('all');
-  const [txSubFilter, setTxSubFilter] = useState<'all' | 'buy' | 'sell' | 'deposit' | 'withdraw'>('all');
+  const [txSubFilter, setTxSubFilter] = useState<'all' | 'buy' | 'sell' | 'deposit' | 'withdraw' | 'checks'>('all');
 
   // Action states for the 5 forms
   // 1. Buy copper
+  const [buyCustomerId, setBuyCustomerId] = useState('');
   const [buyWeight, setBuyWeight] = useState('');
   const [buyRate, setBuyRate] = useState(buyCopperPrice);
   const [buyResponsible, setBuyResponsible] = useState('حسابدار مس');
   const [buyDesc, setBuyDesc] = useState('');
+  const [formError, setFormError] = useState('');
 
   // 2. Sell copper
   const [sellModel, setSellModel] = useState<'individual' | 'bourse'>('individual');
@@ -298,9 +229,9 @@ export default function App() {
   const [externalBuyerName, setExternalBuyerName] = useState('');
   const [sellPaymentType, setSellPaymentType] = useState<'cash' | 'check'>('cash');
   const [sellCheckNumber, setSellCheckNumber] = useState('');
-  const [sellCheckDueDate, setSellCheckDueDate] = useState('۱۴۰۳/۱۲/۲۸');
+  const [sellCheckDueDate, setSellCheckDueDate] = useState<string>(() => getFutureShamsiDate(30));
   const [sellCheckBank, setSellCheckBank] = useState('');
-  const [sellDate, setSellDate] = useState('۱۴۰۵/۰۷/۱۱');
+  const [sellDate, setSellDate] = useState<string>(() => getTodayShamsi());
   const [sellResponsible, setSellResponsible] = useState('حسابدار مس');
   const [sellWeight, setSellWeight] = useState('');
   const [sellRate, setSellRate] = useState(sellCopperPrice); 
@@ -310,7 +241,7 @@ export default function App() {
   // 3. Deposit
   const [depositCustomerId, setDepositCustomerId] = useState('');
   const [depositMethod, setDepositMethod] = useState<'card' | 'bank' | 'pos' | 'cash'>('card');
-  const [depositDate, setDepositDate] = useState('۱۴۰۵/۰۷/۱۱');
+  const [depositDate, setDepositDate] = useState<string>(() => getTodayShamsi());
   const [depositAmount, setDepositAmount] = useState('');
   const [depositTrackingNum, setDepositTrackingNum] = useState('');
   const [depositBank, setDepositBank] = useState('بانک ملت - حساب جاری شرکت مس و اته');
@@ -319,7 +250,7 @@ export default function App() {
 
   // 4. Withdraw
   const [withdrawCustomerId, setWithdrawCustomerId] = useState('');
-  const [withdrawDate, setWithdrawDate] = useState('۱۴۰۵/۰۷/۱۱');
+  const [withdrawDate, setWithdrawDate] = useState<string>(() => getTodayShamsi());
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawDesc, setWithdrawDesc] = useState('');
 
@@ -342,7 +273,10 @@ export default function App() {
 
   // 6. Adjust account/inventory (Image 1 replica)
   const [adjustCustomerId, setAdjustCustomerId] = useState('');
-  const [adjustDate, setAdjustDate] = useState('۱۴۰۵/۰۷/۱۱');
+  const [adjustDate, setAdjustDate] = useState<string>(() => getTodayShamsi());
+  const [adjustTypeMode, setAdjustTypeMode] = useState<'direct' | 'relative'>('direct');
+  const [directCashInput, setDirectCashInput] = useState('');
+  const [directCopperInput, setDirectCopperInput] = useState('');
   const [adjustCashMode, setAdjustCashMode] = useState<'increase' | 'decrease'>('increase');
   const [adjustCashAmount, setAdjustCashAmount] = useState('');
   const [adjustCopperMode, setAdjustCopperMode] = useState<'increase' | 'decrease'>('increase');
@@ -351,6 +285,11 @@ export default function App() {
 
   // State for deleting customer confirmation
   const [customerToDelete, setCustomerToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
+
+  // State for factory reset & zeroing
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetSuccessMessage, setResetSuccessMessage] = useState('');
 
   // Sync reference rates when they are modified
   useEffect(() => {
@@ -360,6 +299,14 @@ export default function App() {
   useEffect(() => {
     setSellRate(sellCopperPrice);
   }, [sellCopperPrice]);
+
+  // Auto-dismiss toast message
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // Database Mapper Helpers
   const mapDbCustomer = (d: DbCustomer): Customer => ({
@@ -444,11 +391,8 @@ export default function App() {
 
         // 2. Fetch Transactions
         const { data: txData, error: txErr } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
-        if (!txErr && txData && txData.length > 0 && isMounted) {
+        if (!txErr && txData && isMounted) {
           setTransactions(txData.map(mapDbTransaction));
-        } else if (!txErr && txData && txData.length === 0) {
-          const seedTx = INITIAL_TRANSACTIONS.map(mapTransactionToDb);
-          await supabase.from('transactions').insert(seedTx);
         }
 
         // 3. Fetch Company Settings
@@ -488,6 +432,8 @@ export default function App() {
         if (payload.eventType === 'INSERT') {
           const newTx = mapDbTransaction(payload.new as DbTransaction);
           setTransactions(prev => [newTx, ...prev.filter(t => t.id !== newTx.id)]);
+        } else if (payload.eventType === 'DELETE') {
+          setTransactions(prev => prev.filter(t => t.id !== (payload.old as any).id));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'company_settings' }, (payload) => {
@@ -558,18 +504,25 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Persian digit convertor for inputs
-  const toEnglishDigits = (str: string) => {
-    return str.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
-              .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString());
+  // Universal number parser handling Persian commas (٬), Arabic commas (،), standard commas, spaces etc.
+  const parseCleanNumber = (str: string | number): number => {
+    if (typeof str === 'number') return isNaN(str) ? 0 : str;
+    if (!str) return 0;
+    const eng = toEnglishDigits(str);
+    const normalized = eng.replace(/[٫]/g, '.').replace(/[,٬،]/g, '');
+    const cleaned = normalized.replace(/[^0-9.]/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
   };
 
   // Human-readable Persian formats
   const formatNumber = (num: number) => {
+    if (isNaN(num) || num === undefined || num === null) return '۰';
     return new Intl.NumberFormat('fa-IR').format(Math.round(num));
   };
 
   const formatKg = (num: number) => {
+    if (isNaN(num) || num === undefined || num === null) return '۰';
     return new Intl.NumberFormat('fa-IR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(num);
   };
 
@@ -702,38 +655,45 @@ export default function App() {
 
   // Launch modal
   const openActionModal = (type: 'buy' | 'sell' | 'check' | 'deposit' | 'withdraw') => {
+    const defaultCustId = currentUser?.role === 'customer' 
+      ? currentUser.id 
+      : (adminSelectedCustomerId || customers[0]?.id || '');
+
+    setFormError('');
+
     if (type === 'buy') {
+      setBuyCustomerId(defaultCustId);
       setBuyWeight('');
       setBuyRate(buyCopperPrice);
       setBuyResponsible('حسابدار مس');
       setBuyDesc('خرید لوله مسی - فروشنده: انبار شرکت مس و اته');
     } else if (type === 'sell') {
       setSellModel('individual');
-      setSellSellerId(adminSelectedCustomerId || customers[0]?.id || '');
+      setSellSellerId(defaultCustId);
       setSellDestination('internal');
       setExternalBuyerName('');
       setSellPaymentType('cash');
       setSellCheckNumber('');
-      setSellCheckDueDate('۱۴۰۳/۱۲/۲۸');
+      setSellCheckDueDate(getFutureShamsiDate(30));
       setSellCheckBank('');
-      setSellDate('۱۴۰۵/۰۷/۱۱');
+      setSellDate(getTodayShamsi());
       setSellResponsible('حسابدار مس');
       setSellWeight('');
       setSellPercentage(null);
       setSellRate(sellCopperPrice);
       setSellDesc('');
     } else if (type === 'deposit') {
-      setDepositCustomerId(adminSelectedCustomerId || customers[0]?.id || '');
+      setDepositCustomerId(defaultCustId);
       setDepositMethod('card');
-      setDepositDate('۱۴۰۵/۰۷/۱۱');
+      setDepositDate(getTodayShamsi());
       setDepositAmount('');
       setDepositTrackingNum('');
       setDepositBank('بانک ملت - حساب جاری شرکت مس و اته');
       setDepositResponsible('حسابدار مالی / صندوقدار');
       setDepositDesc('');
     } else if (type === 'withdraw') {
-      setWithdrawCustomerId(adminSelectedCustomerId || customers[0]?.id || '');
-      setWithdrawDate('۱۴۰۵/۰۷/۱۱');
+      setWithdrawCustomerId(defaultCustId);
+      setWithdrawDate(getTodayShamsi());
       setWithdrawAmount('');
       setWithdrawDesc('');
     } else if (type === 'check') {
@@ -747,35 +707,46 @@ export default function App() {
   // BUY copper transaction
   const submitBuyCopper = (e: React.FormEvent) => {
     e.preventDefault();
-    const client = customers.find(c => c.id === adminSelectedCustomerId);
-    if (!client) return;
+    setFormError('');
 
-    const kg = parseFloat(toEnglishDigits(buyWeight));
-    if (isNaN(kg) || kg <= 0) {
-      alert('لطفاً مقدار معتبر وارد کنید.');
+    const activeId = currentUser?.role === 'customer' 
+      ? currentUser.id 
+      : (buyCustomerId || adminSelectedCustomerId || customers[0]?.id);
+
+    const client = customers.find(c => c.id === activeId);
+    if (!client) {
+      setFormError('حساب مشتری مورد نظر برای ثبت خرید یافت نشد.');
+      return;
+    }
+
+    const kg = parseCleanNumber(buyWeight);
+    if (kg <= 0) {
+      setFormError('لطفاً وزن معتبر برای خرید مس وارد کنید.');
+      return;
+    }
+
+    if (buyRate <= 0) {
+      setFormError('لطفاً قیمت هر کیلوگرم مس را وارد کنید.');
       return;
     }
 
     const totalCost = kg * buyRate;
-    if (client.walletCash < totalCost) {
-      alert(`موجودی ریالی حساب کافی نیست. هزینه کل: ${formatNumber(totalCost)} تومان | موجودی مشتری: ${formatNumber(client.walletCash)} تومان`);
-      return;
-    }
 
-    if (companyWarehouseCopper < kg) {
-      alert(`موجودی انبار مرکزی شرکت (${formatKg(companyWarehouseCopper)} ک‌گ) کافی نیست! ابتدا انبار را شارژ کنید.`);
-      return;
-    }
+    const currentWallet = Number(client.walletCash) || 0;
+    const currentCopper = Number(client.copperBalance) || 0;
+    const currentAvg = Number(client.averageBuyPrice) || buyRate;
+
+    const newWeight = currentCopper + kg;
+    const totalOldCost = currentCopper * currentAvg;
+    const totalNewCost = kg * buyRate;
+    const newAvg = (totalOldCost + totalNewCost) / (newWeight || 1);
+    const afterCash = currentWallet - totalCost;
 
     const updatedCustomers = customers.map(c => {
       if (c.id === client.id) {
-        const newWeight = c.copperBalance + kg;
-        const totalOldCost = c.copperBalance * c.averageBuyPrice;
-        const totalNewCost = kg * buyRate;
-        const newAvg = (totalOldCost + totalNewCost) / newWeight;
         return {
           ...c,
-          walletCash: c.walletCash - totalCost,
+          walletCash: afterCash,
           copperBalance: newWeight,
           averageBuyPrice: isNaN(newAvg) ? buyRate : newAvg
         };
@@ -783,7 +754,7 @@ export default function App() {
       return c;
     });
 
-    const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+    const totalCopper = updatedCustomers.reduce((acc, c) => acc + (Number(c.copperBalance) || 0), 0);
     const finalized = updatedCustomers.map(c => ({
       ...c,
       sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
@@ -800,49 +771,74 @@ export default function App() {
       ratePerKg: buyRate,
       totalAmount: totalCost,
       status: 'completed',
-      description: `${buyDesc || 'خرید لوله مسی فیزیکی از شرکت'}${buyResponsible ? ` | مسئول ثبت: ${buyResponsible}` : ''}`,
-      afterWalletCash: client.walletCash - totalCost
+      description: `خرید لوله مسی (${formatKg(kg)} ک‌گ با نرخ ${formatNumber(buyRate)} ت)`,
+      afterWalletCash: afterCash
     };
 
-    setCompanyWarehouseCopper(prev => prev - kg);
+    const nextTransactions = [newTx, ...transactions];
+
+    // Immediate storage persistence
+    localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
+    localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTransactions));
+
+    setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
     setCustomers(finalized);
-    setTransactions([newTx, ...transactions]);
+    setTransactions(nextTransactions);
     setActiveModal(null);
   };
 
   // SELL copper transaction
   const submitSellCopper = (e: React.FormEvent) => {
     e.preventDefault();
-    const kg = parseFloat(toEnglishDigits(sellWeight));
-    if (isNaN(kg) || kg <= 0) {
-      alert('لطفاً مقدار معتبر وارد کنید.');
+    setFormError('');
+
+    const kg = parseCleanNumber(sellWeight);
+    if (kg <= 0) {
+      setFormError('لطفاً مقدار معتبر برای وزن مس وارد کنید.');
       return;
     }
 
-    const txDate = sellDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
+    if (sellRate <= 0) {
+      setFormError('لطفاً قیمت فروش هر کیلوگرم را وارد کنید.');
+      return;
+    }
+
+    const isCheckPayment = sellPaymentType === 'check';
+    const cleanCheckNum = sellCheckNumber.trim();
+
+    if (isCheckPayment && !cleanCheckNum) {
+      setFormError('لطفاً شناسه یا شماره چک صیادی را وارد نمایید.');
+      return;
+    }
+
+    const txDate = sellDate || getTodayShamsi();
     const txTime = new Date().toLocaleTimeString('fa-IR');
 
     if (sellModel === 'individual') {
-      const selectedId = sellSellerId || adminSelectedCustomerId;
+      const selectedId = currentUser?.role === 'customer' 
+        ? currentUser.id 
+        : (sellSellerId || adminSelectedCustomerId || customers[0]?.id);
       const client = customers.find(c => c.id === selectedId);
       if (!client) {
-        alert('لطفاً طرف حساب فروشنده را انتخاب کنید.');
+        setFormError('لطفاً طرف حساب فروشنده را انتخاب کنید.');
         return;
       }
 
       if (client.copperBalance < kg) {
-        alert(`موجودی لوله مسی مشتری کافی نیست. موجودی: ${formatKg(client.copperBalance)} کیلوگرم`);
+        setFormError(`موجودی لوله مسی مشتری کافی نیست. موجودی فعلی: ${formatKg(client.copperBalance)} کیلوگرم می‌باشد.`);
         return;
       }
 
       const totalRevenue = kg * sellRate;
       const profit = (sellRate - client.averageBuyPrice) * kg;
 
+      // Rule: If check, walletCash does NOT change until check clears. inTransitChecks increases.
+      // If cash, walletCash increases by totalRevenue.
       const updatedCustomers = customers.map(c => {
         if (c.id === client.id) {
-          const newWallet = sellPaymentType === 'cash' ? c.walletCash + totalRevenue : c.walletCash;
-          const newChecks = sellPaymentType === 'check' ? c.inTransitChecks + totalRevenue : c.inTransitChecks;
-          const newBlocked = sellPaymentType === 'check' ? c.blockedCopper + 1 : c.blockedCopper;
+          const newWallet = isCheckPayment ? c.walletCash : c.walletCash + totalRevenue;
+          const newChecks = isCheckPayment ? c.inTransitChecks + totalRevenue : c.inTransitChecks;
+          const newBlocked = isCheckPayment ? c.blockedCopper + 1 : c.blockedCopper;
 
           return {
             ...c,
@@ -864,17 +860,17 @@ export default function App() {
 
       // Detailed transaction description matching options
       let desc = sellDestination === 'internal' 
-        ? 'فروش داخلی (تحویل به شرکت مس و اته)' 
+        ? 'فروش داخلی (تحویل به انبار شرکت مس و اته)' 
         : `فروش به خارج (خریدار بیرونی: ${externalBuyerName.trim() || 'نامشخص'})`;
       
-      if (sellPaymentType === 'check') {
-        desc += ` | دریافت چک صیاد: ${sellCheckNumber || 'بدون سریال'} (سررسید: ${sellCheckDueDate})${sellCheckBank ? ` - بانک ${sellCheckBank}` : ''}`;
+      if (isCheckPayment) {
+        desc += ` | 💳 دریافت چک صیاد: ${cleanCheckNum} (سررسید: ${sellCheckDueDate})${sellCheckBank ? ` - بانک ${sellCheckBank}` : ''} [در انتظار وصول]`;
       } else {
-        desc += ' | تسویه نقدی کیف پول';
+        desc += ' | 💵 تسویه نقدی به کیف پول';
       }
 
       if (sellResponsible) {
-        desc += ` | ثبت‌کننده: ${sellResponsible}`;
+        desc += ` | مسئول: ${sellResponsible}`;
       }
 
       if (sellDesc) {
@@ -891,10 +887,10 @@ export default function App() {
         amountKg: kg,
         ratePerKg: sellRate,
         totalAmount: totalRevenue,
-        status: 'completed',
+        status: isCheckPayment ? 'pending' : 'completed',
         description: desc,
-        checkNumber: sellPaymentType === 'check' ? sellCheckNumber : undefined,
-        afterWalletCash: sellPaymentType === 'cash' ? client.walletCash + totalRevenue : client.walletCash,
+        checkNumber: isCheckPayment ? cleanCheckNum : undefined,
+        afterWalletCash: isCheckPayment ? client.walletCash : client.walletCash + totalRevenue,
         profitVal: profit > 0 ? profit : undefined
       };
 
@@ -902,13 +898,35 @@ export default function App() {
         setCompanyWarehouseCopper(prev => prev + kg);
       }
 
+      const nextTransactions = [newTx, ...transactions];
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTransactions));
+
       setCustomers(finalized);
-      setTransactions([newTx, ...transactions]);
+      setTransactions(nextTransactions);
       setActiveModal(null);
+
+      // Immediate Supabase sync
+      supabase.from('customers').upsert(finalized.map(mapCustomerToDb)).then();
+      supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
+
+      if (isCheckPayment) {
+        setToastMessage({
+          title: 'ثبت فاکتور فروش چکی',
+          desc: `فروش مس با چک صیادی به شماره ${cleanCheckNum} به مبلغ ${formatNumber(totalRevenue)} تومان ثبت گردید. وجه در «اسناد درراه» قرار گرفت و طبق اصول حسابداری تا زمان وصول، موجودی نقدی تغییر نمی‌کند. هر زمان چک پاس شد، می‌توانید از منوی چک‌ها یا جدول، دکمه «تیک پاس شدن» را بزنید.`,
+          type: 'info'
+        });
+      } else {
+        setToastMessage({
+          title: 'ثبت فاکتور فروش نقدی',
+          desc: `فروش مس به مبلغ ${formatNumber(totalRevenue)} تومان با موفقیت ثبت و به موجودی نقدی کیف پول واریز گردید.`,
+          type: 'success'
+        });
+      }
     } else {
       // Bourse / Proportionate sell across all shareholders
       if (totalCopperPool < kg) {
-        alert(`مجموع مس انبار شرکت (${formatKg(totalCopperPool)} کیلوگرم) کمتر از مقدار درخواستی فروش است.`);
+        setFormError(`مجموع مس انبار شرکت (${formatKg(totalCopperPool)} کیلوگرم) کمتر از مقدار درخواستی فروش است.`);
         return;
       }
 
@@ -922,14 +940,21 @@ export default function App() {
         const custRev = totalRevenue * proportion;
         const profit = (sellRate - c.averageBuyPrice) * custKg;
 
-        const newWallet = sellPaymentType === 'cash' ? c.walletCash + custRev : c.walletCash;
-        const newChecks = sellPaymentType === 'check' ? c.inTransitChecks + custRev : c.inTransitChecks;
-        const newBlocked = sellPaymentType === 'check' ? c.blockedCopper + 1 : c.blockedCopper;
+        const newWallet = isCheckPayment ? c.walletCash : c.walletCash + custRev;
+        const newChecks = isCheckPayment ? c.inTransitChecks + custRev : c.inTransitChecks;
+        const newBlocked = isCheckPayment ? c.blockedCopper + 1 : c.blockedCopper;
 
         let desc = `فروش بورسی (سهم متناسب ${c.sharePercentage.toFixed(1)}٪)`;
         desc += sellDestination === 'internal' 
           ? ' - تحویل به شرکت' 
           : ` - خریدار بیرونی: ${externalBuyerName.trim() || 'نامشخص'}`;
+        
+        if (isCheckPayment) {
+          desc += ` | 💳 دریافت چک صیاد: ${cleanCheckNum} (سررسید: ${sellCheckDueDate}) [در انتظار وصول]`;
+        } else {
+          desc += ' | 💵 تسویه نقدی به کیف پول';
+        }
+
         if (sellResponsible) desc += ` | مسئول: ${sellResponsible}`;
         if (sellDesc) desc += ` | ${sellDesc}`;
 
@@ -943,9 +968,10 @@ export default function App() {
           amountKg: custKg,
           ratePerKg: sellRate,
           totalAmount: custRev,
-          status: 'completed',
+          status: isCheckPayment ? 'pending' : 'completed',
           description: desc,
-          afterWalletCash: newWallet,
+          checkNumber: isCheckPayment ? cleanCheckNum : undefined,
+          afterWalletCash: isCheckPayment ? c.walletCash : newWallet,
           profitVal: profit > 0 ? profit : undefined
         });
 
@@ -969,24 +995,123 @@ export default function App() {
         setCompanyWarehouseCopper(prev => prev + kg);
       }
 
+      const nextTransactions = [...newTxs, ...transactions];
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTransactions));
+
       setCustomers(finalized);
-      setTransactions([...newTxs, ...transactions]);
+      setTransactions(nextTransactions);
       setActiveModal(null);
+
+      // Immediate Supabase sync
+      supabase.from('customers').upsert(finalized.map(mapCustomerToDb)).then();
+      supabase.from('transactions').insert(newTxs.map(mapTransactionToDb)).then();
+
+      if (isCheckPayment) {
+        setToastMessage({
+          title: 'ثبت فروش بورسی با چک',
+          desc: `فروش بورسی مس با چک صیادی ${cleanCheckNum} به مبلغ ${formatNumber(totalRevenue)} تومان ثبت و در اسناد درراه سهامداران قرار گرفت.`,
+          type: 'info'
+        });
+      } else {
+        setToastMessage({
+          title: 'ثبت فروش بورسی نقدی',
+          desc: `فروش بورسی مس با تسویه نقدی به مبلغ ${formatNumber(totalRevenue)} تومان با موفقیت ثبت گردید.`,
+          type: 'success'
+        });
+      }
     }
+  };
+
+  // Pass / Clear Check (وصول چک صیادی و واریز به کیف پول)
+  const handlePassCheck = async (txId: string) => {
+    const tx = transactions.find(t => t.id === txId);
+    if (!tx || tx.status === 'completed') return;
+
+    const targetCust = customers.find(c => c.id === tx.customerId);
+    if (!targetCust) return;
+
+    setIsPassingCheck(true);
+
+    const checkAmount = tx.totalAmount;
+    const newWalletCash = targetCust.walletCash + checkAmount;
+    const newInTransitChecks = Math.max(0, targetCust.inTransitChecks - checkAmount);
+    const newBlockedCopper = Math.max(0, targetCust.blockedCopper - 1);
+
+    const clearedDesc = tx.description 
+      ? `${tx.description} | ✅ چک صیاد وصول شد و به کیف پول واریز گردید (${getTodayShamsi()})`
+      : `✅ وصول چک صیادی (${getTodayShamsi()})`;
+
+    const updatedCustomers = customers.map(c => {
+      if (c.id === targetCust.id) {
+        return {
+          ...c,
+          walletCash: newWalletCash,
+          inTransitChecks: newInTransitChecks,
+          blockedCopper: newBlockedCopper
+        };
+      }
+      return c;
+    });
+
+    const updatedTransactions = transactions.map(t => {
+      if (t.id === txId) {
+        return {
+          ...t,
+          status: 'completed' as const,
+          afterWalletCash: newWalletCash,
+          description: clearedDesc
+        };
+      }
+      return t;
+    });
+
+    localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+    localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+
+    setCustomers(updatedCustomers);
+    setTransactions(updatedTransactions);
+    setCheckToPass(null);
+    setIsPassingCheck(false);
+
+    // Sync to Supabase immediately
+    try {
+      await supabase.from('customers').update({
+        wallet_cash: newWalletCash,
+        in_transit_checks: newInTransitChecks,
+        blocked_copper: newBlockedCopper
+      }).eq('id', targetCust.id);
+
+      await supabase.from('transactions').update({
+        status: 'completed',
+        after_wallet_cash: newWalletCash,
+        description: clearedDesc
+      }).eq('id', txId);
+    } catch (err) {
+      console.error('Error syncing passed check to Supabase:', err);
+    }
+
+    setToastMessage({
+      title: 'وصول موفق چک صیادی',
+      desc: `چک صیادی شماره ${tx.checkNumber || ''} به مبلغ ${formatNumber(checkAmount)} تومان با موفقیت پاس شد و به موجودی نقدی «${targetCust.name}» اضافه گردید.`,
+      type: 'success'
+    });
   };
 
   // DEPOSIT transaction
   const submitDeposit = (e: React.FormEvent) => {
     e.preventDefault();
-    const selectedId = depositCustomerId || adminSelectedCustomerId;
+    const selectedId = currentUser?.role === 'customer' 
+      ? currentUser.id 
+      : (depositCustomerId || adminSelectedCustomerId || customers[0]?.id);
     const client = customers.find(c => c.id === selectedId) || customers[0];
     if (!client) {
       alert('لطفاً طرف حساب را انتخاب کنید.');
       return;
     }
 
-    const amount = parseFloat(toEnglishDigits(depositAmount.replace(/,/g, '')));
-    if (isNaN(amount) || amount <= 0) {
+    const amount = parseCleanNumber(depositAmount);
+    if (amount <= 0) {
       alert('لطفاً مبلغ معتبر وارد کنید.');
       return;
     }
@@ -1032,22 +1157,24 @@ export default function App() {
       afterWalletCash: client.walletCash + amount
     };
 
-    setTransactions([newTx, ...transactions]);
+    setTransactions(prev => [newTx, ...prev]);
     setActiveModal(null);
   };
 
   // WITHDRAW transaction
   const submitWithdraw = (e: React.FormEvent) => {
     e.preventDefault();
-    const selectedId = withdrawCustomerId || adminSelectedCustomerId;
+    const selectedId = currentUser?.role === 'customer' 
+      ? currentUser.id 
+      : (withdrawCustomerId || adminSelectedCustomerId || customers[0]?.id);
     const client = customers.find(c => c.id === selectedId) || customers[0];
     if (!client) {
       alert('لطفاً طرف حساب را انتخاب کنید.');
       return;
     }
 
-    const amount = parseFloat(toEnglishDigits(withdrawAmount.replace(/,/g, '')));
-    if (isNaN(amount) || amount <= 0) {
+    const amount = parseCleanNumber(withdrawAmount);
+    if (amount <= 0) {
       alert('لطفاً مبلغ معتبر وارد کنید.');
       return;
     }
@@ -1079,7 +1206,7 @@ export default function App() {
       afterWalletCash: client.walletCash - amount
     };
 
-    setTransactions([newTx, ...transactions]);
+    setTransactions(prev => [newTx, ...prev]);
     setActiveModal(null);
   };
 
@@ -1089,13 +1216,13 @@ export default function App() {
     const client = customers.find(c => c.id === adminSelectedCustomerId);
     if (!client) return;
 
-    const amountVal = parseFloat(toEnglishDigits(checkAmount));
+    const amountVal = parseFloat(toEnglishDigits(checkAmount.replace(/,/g, '')));
     if (isNaN(amountVal) || amountVal <= 0) {
       alert('لطفاً مبلغ معتبر برای چک صیادی وارد کنید.');
       return;
     }
 
-    setCustomers(customers.map(c => {
+    const updated = customers.map(c => {
       if (c.id === client.id) {
         return {
           ...c,
@@ -1104,24 +1231,39 @@ export default function App() {
         };
       }
       return c;
-    }));
+    });
 
     const newTx: Transaction = {
       id: 'tx_' + Date.now(),
       customerId: client.id,
       customerName: client.name,
       type: 'check_register',
-      date: new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date()),
+      date: getTodayShamsi(),
       time: new Date().toLocaleTimeString('fa-IR'),
       totalAmount: amountVal,
-      status: 'completed',
+      status: 'pending',
       description: checkDesc || 'سند اسناد درراه - ۱ چک مسدود لوله مسی',
       checkNumber: checkNum || 'ثبت نشده',
       afterWalletCash: client.walletCash
     };
 
-    setTransactions([newTx, ...transactions]);
+    const nextTxs = [newTx, ...transactions];
+    localStorage.setItem('vateh_customers_v5', JSON.stringify(updated));
+    localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTxs));
+
+    setCustomers(updated);
+    setTransactions(nextTxs);
     setActiveModal(null);
+
+    // Immediate Supabase sync
+    supabase.from('customers').upsert(updated.map(mapCustomerToDb)).then();
+    supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
+
+    setToastMessage({
+      title: 'ثبت چک صیادی در اسناد درراه',
+      desc: `چک صیادی به شماره ${checkNum || ''} به مبلغ ${formatNumber(amountVal)} تومان ثبت گردید. وجه در «اسناد درراه» قرار گرفت و تا زمان وصول، موجودی نقدی اضافه نمی‌شود.`,
+      type: 'info'
+    });
   };
 
   // Helper for applying sell percentage
@@ -1149,7 +1291,32 @@ export default function App() {
     setActiveModal(null);
   };
 
-  // Submit Adjustment (Image 1 mapping)
+  // Helper to open direct balance editor modal
+  const openDirectBalanceModal = (targetCustId?: string) => {
+    const selectedId = targetCustId || adminSelectedCustomerId || customers[0]?.id || '';
+    setAdjustCustomerId(selectedId);
+    setAdjustDate(getTodayShamsi());
+    setAdjustTypeMode('direct');
+
+    const client = customers.find(c => c.id === selectedId) || customers[0];
+    if (client) {
+      setDirectCashInput(formatNumber(client.walletCash));
+      setDirectCopperInput(client.copperBalance.toString());
+    } else {
+      setDirectCashInput('۰');
+      setDirectCopperInput('۰');
+    }
+
+    setAdjustCashMode('increase');
+    setAdjustCashAmount('');
+    setAdjustCopperMode('increase');
+    setAdjustCopperAmount('');
+    setAdjustReason('تنظیم مستقیم و دستی موجودی‌ها توسط مدیر سیستم');
+    setFormError('');
+    setActiveModal('adjust_account');
+  };
+
+  // Submit Adjustment / Direct Balance Edit
   const submitAdjustment = (e: React.FormEvent) => {
     e.preventDefault();
     const selectedId = adjustCustomerId || adminSelectedCustomerId;
@@ -1159,62 +1326,122 @@ export default function App() {
       return;
     }
 
-    // Convert Persian/Arabic/local digits to English
-    const cleanCash = toEnglishDigits(adjustCashAmount).replace(/,/g, '');
-    const cleanCopper = toEnglishDigits(adjustCopperAmount);
+    const txDate = adjustDate || getTodayShamsi();
+    let finalized: Customer[] = [];
+    let newTx: Transaction;
 
-    const rawCash = parseFloat(cleanCash) || 0;
-    const rawCopper = parseFloat(cleanCopper) || 0;
+    if (adjustTypeMode === 'direct') {
+      const targetCash = parseCleanNumber(directCashInput);
+      const targetCopper = parseCleanNumber(directCopperInput);
 
-    const cashAdjustVal = adjustCashMode === 'increase' ? rawCash : -rawCash;
-    const copperAdjustVal = adjustCopperMode === 'increase' ? rawCopper : -rawCopper;
+      const updatedCustomers = customers.map(c => {
+        if (c.id === client.id) {
+          return {
+            ...c,
+            walletCash: targetCash,
+            copperBalance: targetCopper,
+          };
+        }
+        return c;
+      });
 
-    if (rawCash === 0 && rawCopper === 0) {
-      alert('لطفاً حداقل یکی از مقادیر تعدیل ریالی یا وزنی را وارد نمایید.');
-      return;
-    }
+      const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+      finalized = updatedCustomers.map(c => ({
+        ...c,
+        sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
+      }));
 
-    if (!adjustReason.trim()) {
-      alert('لطفاً علت اصلاح حساب را به عنوان شرح بنویسید.');
-      return;
-    }
+      newTx = {
+        id: 'tx_' + Date.now(),
+        customerId: client.id,
+        customerName: client.name,
+        type: 'adjustment',
+        date: txDate,
+        time: new Date().toLocaleTimeString('fa-IR'),
+        amountKg: targetCopper,
+        totalAmount: targetCash,
+        status: 'completed',
+        description: `تنظیم مستقیم موجودی توسط مدیریت - ${adjustReason.trim() || 'ویرایش دستی موجودی‌ها'}`,
+        afterWalletCash: targetCash
+      };
 
-    const updatedCustomers = customers.map(c => {
-      if (c.id === client.id) {
-        const newCopperBalance = Math.max(0, c.copperBalance + copperAdjustVal);
-        return {
-          ...c,
-          walletCash: Math.max(0, c.walletCash + cashAdjustVal),
-          copperBalance: newCopperBalance,
-        };
+      setToastMessage({
+        title: 'ویرایش مستقیم موجودی با موفقیت انجام شد',
+        desc: `موجودی نقدی «${client.name}» برابر با ${formatNumber(targetCash)} تومان و موجودی لوله مسی برابر با ${formatKg(targetCopper)} کیلوگرم ثبت و در دیتابیس سینک شد.`,
+        type: 'success'
+      });
+    } else {
+      // Relative adjustment (+ / - deltas)
+      const cleanCash = toEnglishDigits(adjustCashAmount).replace(/,/g, '');
+      const cleanCopper = toEnglishDigits(adjustCopperAmount);
+
+      const rawCash = parseFloat(cleanCash) || 0;
+      const rawCopper = parseFloat(cleanCopper) || 0;
+
+      const cashAdjustVal = adjustCashMode === 'increase' ? rawCash : -rawCash;
+      const copperAdjustVal = adjustCopperMode === 'increase' ? rawCopper : -rawCopper;
+
+      if (rawCash === 0 && rawCopper === 0) {
+        alert('لطفاً حداقل یکی از مقادیر تعدیل ریالی یا وزنی را وارد نمایید.');
+        return;
       }
-      return c;
-    });
 
-    const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
-    const finalized = updatedCustomers.map(c => ({
-      ...c,
-      sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
-    }));
+      if (!adjustReason.trim()) {
+        alert('لطفاً علت اصلاح حساب را به عنوان شرح بنویسید.');
+        return;
+      }
 
-    const txDate = adjustDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
+      const updatedCustomers = customers.map(c => {
+        if (c.id === client.id) {
+          const newCopperBalance = Math.max(0, c.copperBalance + copperAdjustVal);
+          return {
+            ...c,
+            walletCash: Math.max(0, c.walletCash + cashAdjustVal),
+            copperBalance: newCopperBalance,
+          };
+        }
+        return c;
+      });
 
-    const newTx: Transaction = {
-      id: 'tx_' + Date.now(),
-      customerId: client.id,
-      customerName: client.name,
-      type: 'adjustment',
-      date: txDate,
-      time: new Date().toLocaleTimeString('fa-IR'),
-      amountKg: copperAdjustVal !== 0 ? copperAdjustVal : undefined,
-      totalAmount: cashAdjustVal,
-      status: 'completed',
-      description: `سند اصلاح حساب و تعدیل موجودی - ${adjustReason.trim()}`,
-      afterWalletCash: Math.max(0, client.walletCash + cashAdjustVal)
-    };
+      const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+      finalized = updatedCustomers.map(c => ({
+        ...c,
+        sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
+      }));
+
+      const newCash = Math.max(0, client.walletCash + cashAdjustVal);
+
+      newTx = {
+        id: 'tx_' + Date.now(),
+        customerId: client.id,
+        customerName: client.name,
+        type: 'adjustment',
+        date: txDate,
+        time: new Date().toLocaleTimeString('fa-IR'),
+        amountKg: copperAdjustVal !== 0 ? copperAdjustVal : undefined,
+        totalAmount: cashAdjustVal,
+        status: 'completed',
+        description: `سند اصلاح حساب و تعدیل موجودی - ${adjustReason.trim()}`,
+        afterWalletCash: newCash
+      };
+
+      setToastMessage({
+        title: 'ثبت سند اصلاح حساب',
+        desc: `تعدیل موجودی حساب «${client.name}» با موفقیت اعمال و در دیتابیس ثبت گردید.`,
+        type: 'success'
+      });
+    }
+
+    const nextTxs = [newTx, ...transactions];
+    localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
+    localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTxs));
 
     setCustomers(finalized);
-    setTransactions([newTx, ...transactions]);
+    setTransactions(nextTxs);
+
+    // Sync to Supabase
+    supabase.from('customers').upsert(finalized.map(mapCustomerToDb)).then();
+    supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
 
     setAdjustCashAmount('');
     setAdjustCopperAmount('');
@@ -1222,11 +1449,111 @@ export default function App() {
     setActiveModal(null);
   };
 
-  // Delete customer profile
-  const deleteCustomer = (id: string, name: string) => {
-    if (confirm(`آیا از حذف حساب کاربری «${name}» اطمینان دارید؟`)) {
-      setCustomers(customers.filter(c => c.id !== id));
-      setTransactions(transactions.filter(t => t.customerId !== id));
+  // Confirm Delete Customer profile with full Supabase & LocalStorage sync
+  const confirmDeleteCustomer = async () => {
+    if (!customerToDelete) return;
+    const { id } = customerToDelete;
+    setIsDeletingCustomer(true);
+
+    try {
+      // 1. Direct Supabase delete
+      await supabase.from('transactions').delete().eq('customer_id', id);
+      await supabase.from('customers').delete().eq('id', id);
+
+      // 2. Local state update
+      const updatedCustomers = customers.filter(c => c.id !== id);
+      const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+      const finalized = updatedCustomers.map(c => ({
+        ...c,
+        sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
+      }));
+
+      setCustomers(finalized);
+      setTransactions(prev => prev.filter(t => t.customerId !== id));
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(transactions.filter(t => t.customerId !== id)));
+
+      if (adminSelectedCustomerId === id) {
+        setAdminSelectedCustomerId('');
+      }
+    } catch (err) {
+      console.error('Error deleting customer:', err);
+    } finally {
+      setIsDeletingCustomer(false);
+      setCustomerToDelete(null);
+    }
+  };
+
+  // Factory reset & zero all balances in state, localStorage, and Supabase
+  const handleFactoryReset = async (mode: 'zero_balances' | 'full_factory_reset') => {
+    setIsResetting(true);
+    setResetSuccessMessage('');
+
+    try {
+      if (mode === 'zero_balances') {
+        const zeroed = customers.map(c => ({
+          ...c,
+          walletCash: 0,
+          copperBalance: 0,
+          sharePercentage: 0,
+          realizedProfit: 0,
+          profitChangePercent: 0,
+          averageBuyPrice: 0,
+          inTransitChecks: 0,
+          blockedCopper: 0,
+        }));
+
+        setCustomers(zeroed);
+        setTransactions([]);
+        setCompanyWarehouseCopper(0);
+
+        localStorage.setItem('vateh_customers_v5', JSON.stringify(zeroed));
+        localStorage.setItem('vateh_transactions_v5', JSON.stringify([]));
+        localStorage.setItem('vateh_company_warehouse_copper_v5', '0');
+
+        // Supabase sync: zero all existing customer records & delete all transactions
+        await supabase.from('transactions').delete().neq('id', 'non_existent_id');
+        await supabase.from('customers').upsert(zeroed.map(mapCustomerToDb));
+        await supabase.from('company_settings').upsert({
+          id: 1,
+          company_warehouse_copper: 0,
+          buy_copper_price: buyCopperPrice,
+          sell_copper_price: sellCopperPrice,
+          admin_password: adminPassword,
+          updated_at: new Date().toISOString()
+        });
+
+        setResetSuccessMessage('تمام موجودی‌ها (ریالی، لوله مسی و انبار) و تراکنش‌ها با موفقیت صفر و در دیتابیس آنلاین همگام شدند.');
+      } else {
+        // Full factory reset
+        setCustomers(INITIAL_CUSTOMERS);
+        setTransactions([]);
+        setCompanyWarehouseCopper(0);
+
+        localStorage.setItem('vateh_customers_v5', JSON.stringify(INITIAL_CUSTOMERS));
+        localStorage.setItem('vateh_transactions_v5', JSON.stringify([]));
+        localStorage.setItem('vateh_company_warehouse_copper_v5', '0');
+
+        // Supabase sync: delete all transactions, delete all customer records, insert fresh initial 4 customers with 0
+        await supabase.from('transactions').delete().neq('id', 'non_existent_id');
+        await supabase.from('customers').delete().neq('id', 'non_existent_id');
+        await supabase.from('customers').insert(INITIAL_CUSTOMERS.map(mapCustomerToDb));
+        await supabase.from('company_settings').upsert({
+          id: 1,
+          company_warehouse_copper: 0,
+          buy_copper_price: buyCopperPrice,
+          sell_copper_price: sellCopperPrice,
+          admin_password: adminPassword,
+          updated_at: new Date().toISOString()
+        });
+
+        setResetSuccessMessage('سیستم با موفقیت به تنظیمات اولیه کارخانه بازنشانی شد و تمام اطلاعات دیتابیس صفر گردید.');
+      }
+    } catch (err) {
+      console.error('Error during factory reset:', err);
+      setResetSuccessMessage('خطا در ارتباط با دیتابیس آنلاین، اما اطلاعات محلی با موفقیت صفر شد.');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -1298,6 +1625,9 @@ export default function App() {
   // Filtered transactions for the active client
   const myTransactions = transactions.filter(t => t.customerId === myCustomerId).filter(t => {
     if (txSubFilter === 'all') return true;
+    if (txSubFilter === 'checks') {
+      return Boolean(t.checkNumber) || t.type === 'check_register' || t.status === 'pending';
+    }
     return t.type === txSubFilter;
   });
 
@@ -1520,6 +1850,19 @@ export default function App() {
             </div>
           </div>
 
+          {/* Factory Reset button (Only for Admin - Small & Compact) */}
+          {currentUser.role === 'admin' && (
+            <button
+              type="button"
+              onClick={() => setActiveModal('factory_reset')}
+              title="بازنشانی اطلاعات به حالت کارخانه (Factory Reset)"
+              className="p-1.5 text-rose-600 hover:bg-rose-50 hover:border-rose-300 rounded-xl border border-slate-200 transition bg-white flex items-center gap-1 cursor-pointer shrink-0"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-rose-500" />
+              <span className="hidden sm:inline text-[10px] font-bold text-rose-600">ریست کارخانه</span>
+            </button>
+          )}
+
           {/* Change Password Lock Button (Requested by User) */}
           <button
             type="button"
@@ -1587,57 +1930,87 @@ export default function App() {
             </div>
 
             {/* 2. Total Market Stats Row (Strict Image 2 Design Match with Loleh Mesi terms) */}
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-              
-              <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
-                <span className="text-[10px] text-slate-500 block">کل موجودی ریالی</span>
-                <span className="text-sm font-extrabold text-slate-950 font-mono block">
-                  {formatNumber(totalCashPool)}
-                </span>
-                <span className="text-[9px] text-slate-400 block">مانده نقدی کل کیف پول‌ها</span>
-              </div>
+            {(() => {
+              const pendingTxAll = transactions.filter(t => t.status === 'pending');
+              const totalPendingChecks = pendingTxAll.reduce((acc, t) => acc + (t.totalAmount || 0), 0);
 
-              <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
-                <span className="text-[10px] text-slate-500 block">مجموع لوله مسی مشتریان</span>
-                <span className="text-sm font-extrabold text-slate-950 font-mono block">
-                  {formatKg(totalCopperPool)} ک‌گ
-                </span>
-                <span className="text-[9px] text-slate-400 block">مجموع دارایی لوله مسی مشتریان</span>
-              </div>
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+                  
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
+                    <span className="text-[10px] text-slate-500 block">کل موجودی ریالی</span>
+                    <span className="text-xs lg:text-sm font-extrabold text-slate-950 font-mono block">
+                      {formatNumber(totalCashPool)}
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">مانده نقدی کل کیف‌ها</span>
+                  </div>
 
-              <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
-                <span className="text-[10px] text-slate-500 block">ارزش روز لوله مسی</span>
-                <span className="text-sm font-extrabold text-slate-950 font-mono block">
-                  {formatNumber(totalCopperPool * buyCopperPrice)}
-                </span>
-                <span className="text-[9px] text-slate-400 block">با نرخ خرید {formatNumber(buyCopperPrice)} ت</span>
-              </div>
+                  {/* Pending In-Transit Checks Stat Card */}
+                  <div 
+                    onClick={() => {
+                      setCheckbookTab('pending');
+                      setActiveModal('manage_checks');
+                    }}
+                    className="bg-amber-50 hover:bg-amber-100/90 p-3 rounded-xl border border-amber-300 shadow-sm text-right space-y-1 transition cursor-pointer"
+                    title="مشاهده و وصول چک‌های صیادی و اسناد در راه"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-amber-900 font-black block">اسناد در راه (چک‌ها)</span>
+                      {pendingTxAll.length > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span>
+                      )}
+                    </div>
+                    <span className="text-xs lg:text-sm font-extrabold text-amber-950 font-mono block">
+                      {formatNumber(totalPendingChecks)}
+                    </span>
+                    <span className="text-[9px] text-amber-800 font-bold block">
+                      {toPersianDigits(pendingTxAll.length)} چک در دست وصول (کلیک)
+                    </span>
+                  </div>
 
-              <div className="bg-slate-900 text-white p-3.5 rounded-xl text-right space-y-1">
-                <span className="text-[10px] text-slate-400 block">مجموع کل دارایی‌ها</span>
-                <span className="text-sm font-extrabold text-amber-400 font-mono block">
-                  {formatNumber(totalAssetsVal)}
-                </span>
-                <span className="text-[9px] text-slate-400 block">نقدینگی + ارزش لوله مسی انبار</span>
-              </div>
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
+                    <span className="text-[10px] text-slate-500 block">مجموع لوله مسی</span>
+                    <span className="text-xs lg:text-sm font-extrabold text-slate-950 font-mono block">
+                      {formatKg(totalCopperPool)} ک‌گ
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">مجموع دارایی لوله مسی</span>
+                  </div>
 
-              <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
-                <span className="text-[10px] text-slate-500 block">مجموع سود معاملات</span>
-                <span className="text-sm font-extrabold text-emerald-600 font-mono block">
-                  +{formatNumber(totalProfitPool)}+ تومان
-                </span>
-                <span className="text-[9px] text-emerald-500 block">۱۵.۹٪ بازدهی کل</span>
-              </div>
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
+                    <span className="text-[10px] text-slate-500 block">ارزش روز لوله مسی</span>
+                    <span className="text-xs lg:text-sm font-extrabold text-slate-950 font-mono block">
+                      {formatNumber(totalCopperPool * buyCopperPrice)}
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">نرخ {formatNumber(buyCopperPrice)} ت</span>
+                  </div>
 
-              <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
-                <span className="text-[10px] text-slate-500 block">تعداد طرف‌های حساب</span>
-                <span className="text-sm font-extrabold text-slate-950 block">
-                  {customers.length} نفر
-                </span>
-                <span className="text-[9px] text-slate-400 block">خرید کل: ۱,۳۷۴ ک‌گ</span>
-              </div>
+                  <div className="bg-slate-900 text-white p-3 rounded-xl text-right space-y-1">
+                    <span className="text-[10px] text-slate-400 block">مجموع کل دارایی‌ها</span>
+                    <span className="text-xs lg:text-sm font-extrabold text-amber-400 font-mono block">
+                      {formatNumber(totalAssetsVal)}
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">نقدینگی + ارزش مس انبار</span>
+                  </div>
 
-            </div>
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
+                    <span className="text-[10px] text-slate-500 block">مجموع سود معاملات</span>
+                    <span className="text-xs lg:text-sm font-extrabold text-emerald-600 font-mono block">
+                      +{formatNumber(totalProfitPool)}+ ت
+                    </span>
+                    <span className="text-[9px] text-emerald-500 block">۱۵.۹٪ بازدهی کل</span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
+                    <span className="text-[10px] text-slate-500 block">تعداد طرف‌های حساب</span>
+                    <span className="text-xs lg:text-sm font-extrabold text-slate-950 block">
+                      {customers.length} نفر
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">خرید کل: ۱,۳۷۴ ک‌گ</span>
+                  </div>
+
+                </div>
+              );
+            })()}
 
             {/* 3. Customers Table with Roster Design (Strict Image 2 Design Match with Loleh Mesi terms) */}
             <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm">
@@ -1685,9 +2058,18 @@ export default function App() {
 
                   <button
                     onClick={() => setActiveModal('add_customer')}
-                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1"
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer"
                   >
                     <span>افزودن حساب کاربری</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveModal('factory_reset')}
+                    className="bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 hover:border-rose-200 px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 text-[11px] cursor-pointer"
+                    title="بازنشانی کل اطلاعات به حالت اولیه کارخانه"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>ریست کارخانه</span>
                   </button>
                 </div>
               </div>
@@ -1699,6 +2081,7 @@ export default function App() {
                       <th className="py-3.5 px-5 font-semibold">نام شخص</th>
                       <th className="py-3.5 px-4 font-semibold text-center">درصد سهم (بورس)</th>
                       <th className="py-3.5 px-4 font-semibold">موجودی ریالی (تومان)</th>
+                      <th className="py-3.5 px-4 font-semibold text-amber-900 bg-amber-50/50">اسناد در راه (چک صیاد)</th>
                       <th className="py-3.5 px-4 font-semibold">موجودی لوله مسی (کیلوگرم)</th>
                       <th className="py-3.5 px-4 font-semibold">ارزش روز لوله مسی (تومان)</th>
                       <th className="py-3.5 px-4 font-semibold">مجموع دارایی (تومان)</th>
@@ -1733,6 +2116,27 @@ export default function App() {
                             {formatNumber(cust.walletCash)}
                           </td>
 
+                          {/* In-Transit Checks column */}
+                          <td className="py-4 px-4 font-mono bg-amber-50/30">
+                            {cust.inTransitChecks > 0 ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCheckbookTab('pending');
+                                  setActiveModal('manage_checks');
+                                }}
+                                className="font-bold text-amber-950 hover:text-amber-700 text-xs bg-amber-100/80 hover:bg-amber-200/80 px-2 py-1 rounded-lg border border-amber-300 transition cursor-pointer inline-flex items-center gap-1"
+                                title="مشاهده چک در دفتر چک‌ها"
+                              >
+                                <CreditCard className="w-3 h-3 text-amber-800" />
+                                <span>{formatNumber(cust.inTransitChecks)} ت</span>
+                              </button>
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
+                          </td>
+
                           <td className="py-4 px-4 font-bold font-mono text-slate-900">
                             {formatKg(cust.copperBalance)}
                           </td>
@@ -1759,26 +2163,33 @@ export default function App() {
                           </td>
 
                           <td className="py-4 px-5 text-left">
-                            <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => openDirectBalanceModal(cust.id)}
+                                className="bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 font-black px-3 py-2 rounded-xl transition text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
+                                title="ویرایش و تنظیم مستقیم موجودی پول و مس این شخص"
+                              >
+                                <Sliders className="w-3.5 h-3.5 text-amber-700" />
+                                <span>ویرایش موجودی</span>
+                              </button>
+
                               <button
                                 onClick={() => setAdminSelectedCustomerId(cust.id)}
-                                className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-extrabold px-4 py-2 rounded-xl transition text-[11px]"
+                                className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-extrabold px-3 py-2 rounded-xl transition text-[11px] cursor-pointer"
                               >
-                                مشاهده و عملیات
+                                مشاهده
                               </button>
 
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (confirm(`آیا از حذف حساب کاربری «${cust.name}» و تمام تراکنش‌ها و اسناد مربوط به آن اطمینان کامل دارید؟`)) {
-                                    setCustomers(customers.filter(c => c.id !== cust.id));
-                                    setTransactions(transactions.filter(t => t.customerId !== cust.id));
-                                  }
+                                  setCustomerToDelete({ id: cust.id, name: cust.name });
                                 }}
-                                className="text-slate-400 hover:text-red-600 p-1.5 rounded transition cursor-pointer"
-                                title="حذف حساب"
+                                className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition cursor-pointer"
+                                title="حذف حساب کاربری"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                               </button>
                             </div>
                           </td>
@@ -1854,6 +2265,26 @@ export default function App() {
                   <Share2 className="w-3.5 h-3.5" />
                   <span>ارسال واتساپ</span>
                 </button>
+                {currentUser.role === 'admin' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openDirectBalanceModal(activeProfile.id)}
+                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>ویرایش مستقیم موجودی پول و مس</span>
+                    </button>
+                    <button
+                      onClick={() => setCustomerToDelete({ id: activeProfile.id, name: activeProfile.name })}
+                      className="bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                      title="حذف این حساب کاربری"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>حذف حساب</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1892,80 +2323,80 @@ export default function App() {
                 <span className="text-[9px] text-emerald-500 block">بازدهی تجمیعی معاملات: {activeProfile.profitChangePercent}%+</span>
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-right space-y-1">
-                <span className="text-[10px] text-amber-900 block">اسناد درراه (چک صیاد)</span>
+              <div 
+                onClick={() => setTxSubFilter('checks')}
+                className="bg-amber-50 border border-amber-200 hover:border-amber-300 p-4 rounded-xl text-right space-y-1 transition cursor-pointer"
+                title="کلیک برای مشاهده لیست چک‌های صیادی و اسناد درراه"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-amber-900 font-bold block">اسناد درراه (چک صیاد)</span>
+                  {activeProfile.inTransitChecks > 0 && (
+                    <span className="text-[9px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                      در جریان وصول
+                    </span>
+                  )}
+                </div>
                 <span className="text-sm font-black text-amber-950 font-mono block">
                   {formatNumber(activeProfile.inTransitChecks)}
                 </span>
                 <span className="text-[9px] text-amber-800 block">
-                  {activeProfile.blockedCopper} چک صیادی مسدود لوله مسی
+                  {activeProfile.blockedCopper} چک صیادی در دست وصول (کلیک جهت مشاهده)
                 </span>
               </div>
 
             </div>
 
-            {/* Quick Action buttons (Image 1 design replica) - ONLY available for Admin */}
-            {currentUser.role === 'admin' && (
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-[11px] font-bold text-slate-400 block mb-3">عملیات سریع برای این حساب معاملاتی:</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => openActionModal('buy')}
-                    className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow"
-                  >
-                    <span>+ خرید لوله مسی</span>
-                  </button>
-                  <button
-                    onClick={() => openActionModal('sell')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow"
-                  >
-                    <span>- فروش لوله مسی</span>
-                  </button>
-                  <button
-                    onClick={() => openActionModal('deposit')}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow"
-                  >
-                    <span>📥 واریز وجه ریالی</span>
-                  </button>
-                  <button
-                    onClick={() => openActionModal('withdraw')}
-                    className="bg-red-600 hover:bg-red-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow"
-                  >
-                    <span>📤 برداشت وجه ریالی</span>
-                  </button>
-                  <button
-                    onClick={() => openActionModal('check')}
-                    className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow"
-                  >
-                    <span>✍️ ثبت چک صیادی</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAdjustCashAmount('');
-                      setAdjustCopperAmount('');
-                      setAdjustReason('');
-                      setActiveModal('adjust_account');
-                    }}
-                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow"
-                  >
-                    <span>🎛️ سند اصلاح حساب / تعدیل</span>
-                  </button>
-                </div>
+            {/* Quick Action buttons (Available for both Admin and Customer) */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <span className="text-[11px] font-bold text-slate-400 block mb-3">عملیات سریع برای این حساب معاملاتی:</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => openActionModal('buy')}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                >
+                  <span>+ خرید لوله مسی</span>
+                </button>
+                <button
+                  onClick={() => openActionModal('sell')}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                >
+                  <span>- فروش لوله مسی</span>
+                </button>
+                <button
+                  onClick={() => openActionModal('deposit')}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                >
+                  <span>📥 واریز وجه ریالی</span>
+                </button>
+                <button
+                  onClick={() => openActionModal('withdraw')}
+                  className="bg-red-600 hover:bg-red-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                >
+                  <span>📤 برداشت وجه ریالی</span>
+                </button>
+                {currentUser.role === 'admin' && (
+                  <>
+                    <button
+                      onClick={() => openActionModal('check')}
+                      className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                    >
+                      <span>✍️ ثبت چک صیادی</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAdjustCashAmount('');
+                        setAdjustCopperAmount('');
+                        setAdjustReason('');
+                        setActiveModal('adjust_account');
+                      }}
+                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                    >
+                      <span>🎛️ سند اصلاح حساب / تعدیل</span>
+                    </button>
+                  </>
+                )}
               </div>
-            )}
-
-            {/* Read-only warning for clients inside their panel */}
-            {currentUser.role === 'customer' && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-950 rounded-2xl p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-                <div className="text-xs space-y-1">
-                  <p className="font-extrabold text-amber-950">توجیح امنیتی حساب‌های صیادی و معاملات:</p>
-                  <p className="leading-relaxed text-amber-900/90">
-                    مشتری گرامی، جهت ثبت خرید جدید لوله مسی، فروش محصولات، شارژ فیزیکی حواله‌ها، تسویه ریالی یا تایید چک صیادی با واحد بازرگانی تماس بگیرید. اطلاعات فوق به شکل لحظه‌ای از کاردکس رسمی شما استخراج شده است.
-                  </p>
-                </div>
-              </div>
-            )}
+            </div>
 
             {/* Car-dex Table layout (Strict Image 1 Match with column naming) */}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -1976,34 +2407,44 @@ export default function App() {
                 </div>
 
                 {/* Subfilter tabs inside table header */}
-                <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-black border">
+                <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-black border flex-wrap">
                   <button 
                     onClick={() => setTxSubFilter('all')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'all' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'all' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     همه تراکنش‌ها ({myTransactions.length})
                   </button>
                   <button 
+                    onClick={() => setTxSubFilter('checks')}
+                    className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1 ${txSubFilter === 'checks' ? 'bg-amber-500 text-slate-950 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-900'}`}
+                  >
+                    <CreditCard className="w-3 h-3" />
+                    <span>چک‌ها و اسناد درراه</span>
+                    {activeProfile.inTransitChecks > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                    )}
+                  </button>
+                  <button 
                     onClick={() => setTxSubFilter('buy')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'buy' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'buy' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     خرید مس
                   </button>
                   <button 
                     onClick={() => setTxSubFilter('sell')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'sell' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'sell' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     فروش مس
                   </button>
                   <button 
                     onClick={() => setTxSubFilter('deposit')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'deposit' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'deposit' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     واریزها
                   </button>
                   <button 
                     onClick={() => setTxSubFilter('withdraw')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'withdraw' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'withdraw' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     برداشت‌ها
                   </button>
@@ -2028,21 +2469,28 @@ export default function App() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {myTransactions.map((tx, idx) => (
-                      <tr key={tx.id} className="hover:bg-slate-50/50 transition">
+                      <tr key={tx.id} className={`hover:bg-slate-50/50 transition ${tx.status === 'pending' ? 'bg-amber-50/30' : ''}`}>
                         <td className="py-4 px-4 font-mono text-slate-400 font-bold">{idx + 1}</td>
                         <td className="py-4 px-4 font-mono">
                           <span className="block text-slate-900">{tx.date}</span>
                           <span className="block text-[9px] text-slate-400 mt-0.5">{tx.time || '۰۹:۰۰:۳۶'}</span>
                         </td>
                         <td className="py-4 px-4">
-                          <span className="font-extrabold text-slate-950 block">
-                            {tx.type === 'buy' && '• خرید لوله مسی'}
-                            {tx.type === 'sell' && '• فروش لوله مسی'}
-                            {tx.type === 'check_register' && '• ثبت چک تضمین'}
-                            {tx.type === 'adjustment' && '• سند اصلاح حساب'}
-                            {tx.type === 'deposit' && '• شارژ نقدی حساب'}
-                            {tx.type === 'withdraw' && '• برداشت وجه'}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-extrabold text-slate-950 block">
+                              {tx.type === 'buy' && '• خرید لوله مسی'}
+                              {tx.type === 'sell' && (tx.checkNumber ? '💳 فروش با دریافت چک' : '• فروش لوله مسی')}
+                              {tx.type === 'check_register' && '• ثبت چک تضمین'}
+                              {tx.type === 'adjustment' && '• سند اصلاح حساب'}
+                              {tx.type === 'deposit' && '• شارژ نقدی حساب'}
+                              {tx.type === 'withdraw' && '• برداشت وجه'}
+                            </span>
+                            {tx.checkNumber && (
+                              <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded border border-amber-300">
+                                صیاد: {tx.checkNumber}
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-slate-500 block max-w-xs truncate mt-0.5" title={tx.description}>
                             {tx.description}
                           </span>
@@ -2065,20 +2513,43 @@ export default function App() {
                           {tx.afterWalletCash !== undefined ? `${formatNumber(tx.afterWalletCash)}` : '-'}
                         </td>
                         <td className="py-4 px-4">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-100">
-                            تأیید نهایی
-                          </span>
+                          {tx.status === 'pending' ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-1 rounded-lg border border-amber-300 whitespace-nowrap">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping"></span>
+                              <span>در انتظار وصول چک</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-100 whitespace-nowrap">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>{tx.checkNumber ? 'چک وصول و واریز شد' : 'تأیید نهایی'}</span>
+                            </span>
+                          )}
                         </td>
                         <td className="py-4 px-4 text-left">
-                          <button
-                            onClick={() => {
-                              setSelectedTx(tx);
-                              setActiveModal('receipt');
-                            }}
-                            className="text-amber-700 hover:text-white hover:bg-amber-600 border border-amber-600/30 px-2.5 py-1 rounded-lg transition font-bold text-[10px]"
-                          >
-                            فاکتور چاپی
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Check Pass Button (تیک پاس شدن چک) */}
+                            {tx.status === 'pending' && (
+                              <button
+                                type="button"
+                                onClick={() => handlePassCheck(tx.id)}
+                                className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-2.5 py-1.5 rounded-lg transition text-[10px] shadow-sm cursor-pointer whitespace-nowrap"
+                                title="تیک پاس شدن چک: مبلغ به موجودی کیف پول واریز می‌شود"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                                <span>تیک پاس شدن چک</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                setSelectedTx(tx);
+                                setActiveModal('receipt');
+                              }}
+                              className="text-amber-700 hover:text-white hover:bg-amber-600 border border-amber-600/30 px-2.5 py-1 rounded-lg transition font-bold text-[10px] cursor-pointer"
+                            >
+                              فاکتور چاپی
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2103,53 +2574,6 @@ export default function App() {
           MODALS ZONE
           ========================================= */}
 
-      {/* Delete Confirmation Modal */}
-      {customerToDelete && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto" dir="rtl">
-          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
-            <div className="bg-red-600 text-white p-6 flex justify-between items-center">
-              <div className="space-y-1">
-                <h4 className="text-base font-black">حذف حساب کاربری</h4>
-                <p className="text-xs text-red-100">این عملیات غیرقابل بازگشت است</p>
-              </div>
-              <button 
-                onClick={() => setCustomerToDelete(null)}
-                className="text-white hover:bg-white/10 w-8 h-8 rounded-full flex items-center justify-center transition"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-slate-700 leading-relaxed text-right">
-                آیا از حذف حساب کاربری <span className="font-extrabold text-slate-900 font-sans">«{customerToDelete.name}»</span> و تمامی تراکنش‌ها و اسناد مربوط به آن اطمینان کامل دارید؟
-              </p>
-              
-              <div className="pt-2 flex gap-3">
-                <button
-                  onClick={() => {
-                    const idToDelete = customerToDelete.id;
-                    setCustomers(customers.filter(c => c.id !== idToDelete));
-                    setTransactions(transactions.filter(t => t.customerId !== idToDelete));
-                    supabase.from('customers').delete().eq('id', idToDelete).then();
-                    setCustomerToDelete(null);
-                  }}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black py-2.5 rounded-xl transition text-xs shadow-sm shadow-red-600/20"
-                >
-                  بله، حذف شود
-                </button>
-                <button
-                  onClick={() => setCustomerToDelete(null)}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-5 rounded-xl transition text-xs"
-                >
-                  انصراف
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 1. Modal: Register BUY copper */}
       {activeModal === 'buy' && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto" dir="rtl">
@@ -2172,6 +2596,45 @@ export default function App() {
 
             <form onSubmit={submitBuyCopper} className="p-6 space-y-4">
               
+              {/* Form Error Banner */}
+              {formError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 font-bold animate-in fade-in duration-150">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Customer Selector for Admin OR User Info Badge */}
+              {currentUser.role === 'admin' ? (
+                <div>
+                  <label className="block text-xs font-black text-slate-800 mb-1.5">
+                    انتخاب حساب مشتری خریدار <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={buyCustomerId || adminSelectedCustomerId || customers[0]?.id || ''}
+                    onChange={(e) => setBuyCustomerId(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  >
+                    {customers.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} — موجودی کیف: {formatNumber(c.walletCash)} تومان | مس: {formatKg(c.copperBalance)} ک‌گ
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200/80 p-3 rounded-xl flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-amber-700" />
+                    <span className="font-extrabold text-slate-900">{currentUser.name}</span>
+                  </div>
+                  <div className="text-left font-mono">
+                    <span className="text-slate-500 text-[10px] ml-1">موجودی فعلی کیف:</span>
+                    <span className="font-black text-slate-950">{formatNumber(activeProfile?.walletCash || 0)} ت</span>
+                  </div>
+                </div>
+              )}
+
               {/* 1. وزن مس (کیلوگرم) */}
               <div>
                 <label className="block text-xs font-black text-slate-800 mb-1.5">
@@ -2204,9 +2667,8 @@ export default function App() {
                     required
                     value={buyRate === 0 ? '' : formatNumber(buyRate)}
                     onChange={(e) => {
-                      const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
-                      const num = parseFloat(raw);
-                      setBuyRate(isNaN(num) ? 0 : num);
+                      const num = parseCleanNumber(e.target.value);
+                      setBuyRate(num);
                     }}
                     placeholder="مثال: ۲,۱۵۰,۰۰۰"
                     className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-sm font-mono text-center font-bold transition"
@@ -2219,15 +2681,21 @@ export default function App() {
 
               {/* 3. کادر جمع کل فاکتور خرید */}
               {(() => {
-                const kgInput = parseFloat(toEnglishDigits(buyWeight)) || 0;
+                const kgInput = parseCleanNumber(buyWeight);
                 const totalCost = kgInput * buyRate;
-                const currentWallet = activeProfile?.walletCash || 0;
+                const activeId = currentUser?.role === 'customer' 
+                  ? currentUser.id 
+                  : (buyCustomerId || adminSelectedCustomerId || customers[0]?.id);
+                const client = customers.find(c => c.id === activeId);
+                const currentWallet = Number(client?.walletCash) || 0;
+                const currentCopper = Number(client?.copperBalance) || 0;
                 const remainingCash = currentWallet - totalCost;
+                const projectedCopper = currentCopper + kgInput;
 
                 return (
                   <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-3 shadow-md border border-slate-800 animate-in fade-in duration-150">
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400 font-bold">جمع کل فاکتور:</span>
+                      <span className="text-slate-400 font-bold">جمع کل فاکتور خرید:</span>
                       <span className="font-mono text-amber-400 font-black text-base">
                         {formatNumber(totalCost)} <span className="text-xs font-sans text-amber-400/80">تومان</span>
                       </span>
@@ -2246,16 +2714,17 @@ export default function App() {
                       </span>
                     </div>
 
+                    <div className="flex justify-between items-center text-xs border-t border-slate-800/80 pt-2.5">
+                      <span className="text-slate-400 font-medium">موجودی مس پس از خرید:</span>
+                      <span className="font-mono font-bold text-amber-300">
+                        {formatKg(projectedCopper)} کیلوگرم
+                      </span>
+                    </div>
+
                     {remainingCash < 0 && (
-                      <div className="p-2.5 rounded-xl bg-red-950/50 border border-red-800/40 text-red-300 text-xs flex items-center gap-2 font-bold">
-                        <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                        <span>موجودی ریالی کیف پول برای این خرید کافی نیست!</span>
-                      </div>
-                    )}
-                    {companyWarehouseCopper < kgInput && (
-                      <div className="p-2.5 rounded-xl bg-red-950/50 border border-red-800/40 text-red-300 text-xs flex items-center gap-2 font-bold">
-                        <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                        <span>موجودی انبار مرکزی شرکت ({formatKg(companyWarehouseCopper)} ک‌گ) کافی نیست!</span>
+                      <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-800/40 text-amber-300 text-xs flex items-center gap-2 font-bold">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                        <span>مبلغ خرید از مانده نقدی فعلی بیشتر است (کسر از حساب انجام می‌شود).</span>
                       </div>
                     )}
                   </div>
@@ -2314,6 +2783,14 @@ export default function App() {
               return (
                 <form onSubmit={submitSellCopper} className="p-4 sm:p-6 space-y-4 max-h-[82vh] overflow-y-auto">
                   
+                  {/* Form Error Banner */}
+                  {formError && (
+                    <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 font-bold animate-in fade-in duration-150">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                      <span>{formError}</span>
+                    </div>
+                  )}
+
                   {/* 1. مدل فروش: تکی یا بورسی */}
                   <div>
                     <label className="block text-xs font-black text-slate-800 mb-1.5">
@@ -2357,7 +2834,7 @@ export default function App() {
                         >
                           {customers.map((c) => (
                             <option key={c.id} value={c.id}>
-                              فروشنده: {c.name} (موجودی مس: {formatKg(c.copperBalance)} کیلوگرم)
+                              فروشنده: {c.name} (موجودی مس: {formatKg(c.copperBalance)} کیلوگرم | مانده نقدی: {formatNumber(c.walletCash)} ت)
                             </option>
                           ))}
                         </select>
@@ -2445,33 +2922,41 @@ export default function App() {
                         }`}
                       >
                         <CreditCard className="w-3.5 h-3.5" />
-                        <span>دریافت چک</span>
+                        <span>دریافت چک صیادی</span>
                       </button>
                     </div>
 
                     {/* Check fields if check */}
                     {sellPaymentType === 'check' && (
-                      <div className="mt-2.5 p-3.5 bg-amber-50/50 border border-amber-200 rounded-2xl space-y-2.5 animate-in fade-in duration-150">
-                        <div className="grid grid-cols-2 gap-2.5">
+                      <div className="mt-2.5 p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-3 animate-in fade-in duration-150">
+                        
+                        {/* Notice for check financial rule */}
+                        <div className="p-2.5 bg-amber-100/80 border border-amber-300 rounded-xl text-[11px] text-amber-950 font-bold flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-800 shrink-0 mt-0.5" />
+                          <span>قانون حسابداری چک: تا زمانی که چک پاس نشده، موجودی نقدی مشتری دست‌نخورده باقی می‌ماند و مبلغ در «اسناد درراه» قرار می‌گیرد. هر زمان چک وصول شد (یا زودتر از سررسید)، می‌توانید با زدن دکمه «تیک پاس شدن چک»، مبلغ را به موجودی نقدی واریز کنید.</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {/* Due Date with ShamsiDatePicker */}
                           <div>
-                            <label className="block text-[10px] font-extrabold text-slate-700 mb-1">
-                              تاریخ سررسید چک <span className="text-red-500">*</span>
-                            </label>
-                            <div className="relative">
-                              <input
-                                type="text"
-                                required
-                                value={sellCheckDueDate}
-                                onChange={(e) => setSellCheckDueDate(e.target.value)}
-                                placeholder="۱۴۰۳/۱۲/۲۸"
-                                className="w-full p-2.5 pl-8 bg-white border border-amber-200 rounded-xl text-xs font-mono font-bold text-center text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                              />
-                              <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3 pointer-events-none" />
-                            </div>
+                            <ShamsiDatePicker
+                              label="تاریخ سررسید چک صیادی"
+                              required
+                              value={sellCheckDueDate}
+                              onChange={setSellCheckDueDate}
+                              accentColor="amber"
+                              presets={[
+                                { label: '+۱۵ روز', daysOffset: 15 },
+                                { label: '+۳۰ روز (یک‌ماهه)', daysOffset: 30 },
+                                { label: '+۴۵ روز', daysOffset: 45 },
+                                { label: '+۶۰ روز (دو‌ماهه)', daysOffset: 60 },
+                                { label: '+۹۰ روز (سه‌ماهه)', daysOffset: 90 },
+                              ]}
+                            />
                           </div>
 
                           <div>
-                            <label className="block text-[10px] font-extrabold text-slate-700 mb-1">
+                            <label className="block text-xs font-black text-slate-800 mb-1.5">
                               شماره چک / شناسه صیاد <span className="text-red-500">*</span>
                             </label>
                             <input
@@ -2479,44 +2964,43 @@ export default function App() {
                               required
                               value={sellCheckNumber}
                               onChange={(e) => setSellCheckNumber(e.target.value)}
-                              placeholder="مثال: ۱۲۳۴۵۶۷۸۹"
-                              className="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs font-mono text-center text-slate-900 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                              placeholder="مثال: ۵۶۵۶۶ یا شناسه ۱۶ رقمی"
+                              className="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs font-mono text-center text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 transition shadow-sm"
                             />
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-extrabold text-slate-700 mb-1">
+                          <label className="block text-xs font-black text-slate-800 mb-1.5">
                             نام بانک صادرکننده
                           </label>
                           <input
                             type="text"
                             value={sellCheckBank}
                             onChange={(e) => setSellCheckBank(e.target.value)}
-                            placeholder="مثال: بانک ملی، ملت، تجارت..."
-                            className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            placeholder="مثال: بانک ملت، ملی، صادرات، تجارت..."
+                            className="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 transition shadow-sm"
                           />
                         </div>
                       </div>
                     )}
                   </div>
 
-                  {/* 4. تاریخ معامله */}
+                  {/* 4. تاریخ معامله with ShamsiDatePicker */}
                   <div>
-                    <label className="block text-xs font-black text-slate-800 mb-1.5">
-                      تاریخ فروش <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        value={sellDate}
-                        onChange={(e) => setSellDate(e.target.value)}
-                        placeholder="۱۴۰۵/۰۷/۱۱"
-                        className="w-full p-2.5 pl-8 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-center text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                      />
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3 pointer-events-none" />
-                    </div>
+                    <ShamsiDatePicker
+                      label="تاریخ ثبت فروش مس"
+                      required
+                      value={sellDate}
+                      onChange={setSellDate}
+                      accentColor="emerald"
+                      presets={[
+                        { label: 'امروز', daysOffset: 0 },
+                        { label: 'دیروز', daysOffset: -1 },
+                        { label: '۲ روز قبل', daysOffset: -2 },
+                        { label: '۷ روز قبل', daysOffset: -7 },
+                      ]}
+                    />
                   </div>
 
                   {/* 5. وزن مس و قیمت هر کیلوگرم */}
@@ -2563,9 +3047,8 @@ export default function App() {
                           required
                           value={sellRate === 0 ? '' : formatNumber(sellRate)}
                           onChange={(e) => {
-                            const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
-                            const num = parseFloat(raw);
-                            setSellRate(isNaN(num) ? 0 : num);
+                            const num = parseCleanNumber(e.target.value);
+                            setSellRate(num);
                           }}
                           placeholder="مثال: ۲,۳۰۰,۰۰۰"
                           className="w-full pl-14 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-xs font-mono text-center font-bold transition"
@@ -2816,7 +3299,7 @@ export default function App() {
 
             {(() => {
               const selectedTarget = customers.find(c => c.id === (depositCustomerId || adminSelectedCustomerId)) || customers[0];
-              const depositVal = parseFloat(toEnglishDigits(depositAmount.replace(/,/g, ''))) || 0;
+              const depositVal = parseCleanNumber(depositAmount);
               const currentCash = selectedTarget?.walletCash || 0;
               const projectedCash = currentCash + depositVal;
 
@@ -2835,9 +3318,8 @@ export default function App() {
                         autoFocus
                         value={depositAmount}
                         onChange={(e) => {
-                          const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
-                          const num = parseFloat(raw);
-                          setDepositAmount(isNaN(num) ? '' : formatNumber(num));
+                          const num = parseCleanNumber(e.target.value);
+                          setDepositAmount(num === 0 ? '' : formatNumber(num));
                         }}
                         placeholder="مثال: ۵۰,۰۰۰,۰۰۰"
                         className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-mono text-center font-bold transition"
@@ -2857,22 +3339,21 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* 2. تاریخ واریز */}
+                  {/* 2. تاریخ واریز with ShamsiDatePicker */}
                   <div>
-                    <label className="block text-xs font-black text-slate-800 mb-1.5">
-                      تاریخ واریز <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative rounded-xl shadow-sm">
-                      <input
-                        type="text"
-                        required
-                        value={depositDate}
-                        onChange={(e) => setDepositDate(e.target.value)}
-                        placeholder="۱۴۰۵/۰۷/۱۱"
-                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-mono text-center font-bold transition"
-                      />
-                      <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-3.5 pointer-events-none" />
-                    </div>
+                    <ShamsiDatePicker
+                      label="تاریخ واریز وجه"
+                      required
+                      value={depositDate}
+                      onChange={setDepositDate}
+                      accentColor="emerald"
+                      presets={[
+                        { label: 'امروز', daysOffset: 0 },
+                        { label: 'دیروز', daysOffset: -1 },
+                        { label: '۲ روز قبل', daysOffset: -2 },
+                        { label: '۷ روز قبل', daysOffset: -7 },
+                      ]}
+                    />
                   </div>
 
                   {/* 3. کادر خلاصه وضعیت مانده */}
@@ -2939,7 +3420,7 @@ export default function App() {
 
             {(() => {
               const selectedTarget = customers.find(c => c.id === (withdrawCustomerId || adminSelectedCustomerId)) || customers[0];
-              const withdrawVal = parseFloat(toEnglishDigits(withdrawAmount.replace(/,/g, ''))) || 0;
+              const withdrawVal = parseCleanNumber(withdrawAmount);
               const currentCash = selectedTarget?.walletCash || 0;
               const remainingCash = currentCash - withdrawVal;
 
@@ -2969,9 +3450,8 @@ export default function App() {
                         autoFocus
                         value={withdrawAmount}
                         onChange={(e) => {
-                          const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
-                          const num = parseFloat(raw);
-                          setWithdrawAmount(isNaN(num) ? '' : formatNumber(num));
+                          const num = parseCleanNumber(e.target.value);
+                          setWithdrawAmount(num === 0 ? '' : formatNumber(num));
                         }}
                         placeholder="مثال: ۵۰,۰۰۰,۰۰۰"
                         className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-sm font-mono text-center font-bold transition"
@@ -2991,22 +3471,21 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* 2. تاریخ برداشت */}
+                  {/* 2. تاریخ برداشت with ShamsiDatePicker */}
                   <div>
-                    <label className="block text-xs font-black text-slate-800 mb-1.5">
-                      تاریخ برداشت <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative rounded-xl shadow-sm">
-                      <input
-                        type="text"
-                        required
-                        value={withdrawDate}
-                        onChange={(e) => setWithdrawDate(e.target.value)}
-                        placeholder="۱۴۰۵/۰۷/۱۱"
-                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-sm font-mono text-center font-bold transition"
-                      />
-                      <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-3.5 pointer-events-none" />
-                    </div>
+                    <ShamsiDatePicker
+                      label="تاریخ برداشت وجه"
+                      required
+                      value={withdrawDate}
+                      onChange={setWithdrawDate}
+                      accentColor="amber"
+                      presets={[
+                        { label: 'امروز', daysOffset: 0 },
+                        { label: 'دیروز', daysOffset: -1 },
+                        { label: '۲ روز قبل', daysOffset: -2 },
+                        { label: '۷ روز قبل', daysOffset: -7 },
+                      ]}
+                    />
                   </div>
 
                   {/* 3. کادر خلاصه وضعیت مانده */}
@@ -3259,8 +3738,43 @@ export default function App() {
               const selectedTarget = customers.find(c => c.id === (adjustCustomerId || adminSelectedCustomerId)) || customers[0];
 
               return (
-                <form onSubmit={submitAdjustment} className="p-5 md:p-6 space-y-4">
+                <form onSubmit={submitAdjustment} className="p-5 md:p-6 space-y-4 max-h-[82vh] overflow-y-auto">
                   
+                  {/* Mode Selector: Direct New Values vs Relative Deltas */}
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdjustTypeMode('direct');
+                        if (selectedTarget) {
+                          setDirectCashInput(formatNumber(selectedTarget.walletCash));
+                          setDirectCopperInput(selectedTarget.copperBalance.toString());
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        adjustTypeMode === 'direct'
+                          ? 'bg-amber-500 text-slate-950 shadow-sm font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Sliders className="w-3.5 h-3.5 text-slate-950" />
+                      <span>ویرایش مستقیم (ثبت عدد جدید)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdjustTypeMode('relative')}
+                      className={`py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        adjustTypeMode === 'relative'
+                          ? 'bg-slate-900 text-white shadow-sm font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>تعدیل نسبی (+ / -)</span>
+                    </button>
+                  </div>
+
                   {/* 1. نام فرد / طرف حساب * */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold text-slate-800">
@@ -3269,13 +3783,21 @@ export default function App() {
                     <div className="relative">
                       <select
                         value={adjustCustomerId || adminSelectedCustomerId}
-                        onChange={(e) => setAdjustCustomerId(e.target.value)}
-                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 appearance-none focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        onChange={(e) => {
+                          const newId = e.target.value;
+                          setAdjustCustomerId(newId);
+                          const target = customers.find(c => c.id === newId);
+                          if (target) {
+                            setDirectCashInput(formatNumber(target.walletCash));
+                            setDirectCopperInput(target.copperBalance.toString());
+                          }
+                        }}
+                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 appearance-none focus:outline-none focus:ring-1 focus:ring-amber-500"
                       >
                         <option value="">-- انتخاب طرف حساب --</option>
                         {customers.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.name}
+                            {c.name} (موجودی فعلی: {formatNumber(c.walletCash)} ت | {formatKg(c.copperBalance)} ک‌گ)
                           </option>
                         ))}
                       </select>
@@ -3293,133 +3815,208 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* 3. تاریخ ثبت اصلاح * */}
+                  {/* 3. تاریخ ثبت اصلاح * with ShamsiDatePicker */}
+                  <div>
+                    <ShamsiDatePicker
+                      label="تاریخ ثبت سند اصلاحی"
+                      required
+                      value={adjustDate}
+                      onChange={setAdjustDate}
+                      accentColor="amber"
+                      presets={[
+                        { label: 'امروز', daysOffset: 0 },
+                        { label: 'دیروز', daysOffset: -1 },
+                        { label: '۲ روز قبل', daysOffset: -2 },
+                        { label: '۷ روز قبل', daysOffset: -7 },
+                      ]}
+                    />
+                  </div>
+
+                  {/* Mode 1: DIRECT BALANCE EDIT (مقداردهی مستقیم) */}
+                  {adjustTypeMode === 'direct' && (
+                    <div className="space-y-4">
+                      {/* Direct Cash Input */}
+                      <div className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                        <div className="flex justify-between items-center text-xs">
+                          <label className="font-extrabold text-slate-900">
+                            موجودی نقدی جدید کیف پول (تومان) <span className="text-red-500">*</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setDirectCashInput('۰')}
+                            className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer bg-rose-50 px-2 py-0.5 rounded border border-rose-200"
+                          >
+                            صفر کردن پول
+                          </button>
+                        </div>
+                        <div className="relative rounded-xl shadow-sm">
+                          <input
+                            type="text"
+                            required
+                            value={directCashInput}
+                            onChange={(e) => {
+                              const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
+                              const num = parseFloat(raw);
+                              setDirectCashInput(isNaN(num) ? '' : formatNumber(num));
+                            }}
+                            placeholder="مثال: ۵۰۰,۰۰۰,۰۰۰"
+                            className="w-full pl-14 pr-4 py-3 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono text-center font-black text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 transition shadow-sm"
+                          />
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
+                            تومان
+                          </div>
+                        </div>
+                        {parseCleanNumber(directCashInput) > 0 && (
+                          <div className="text-left text-[11px] font-bold text-amber-900 bg-amber-50 p-2 rounded-xl border border-amber-200">
+                            {numToPersianWords(parseCleanNumber(directCashInput))} تومان
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Direct Copper Input */}
+                      <div className="space-y-2 bg-amber-50/50 p-3.5 rounded-2xl border border-amber-200">
+                        <div className="flex justify-between items-center text-xs">
+                          <label className="font-extrabold text-amber-950">
+                            موجودی لوله مسی جدید (کیلوگرم) <span className="text-red-500">*</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setDirectCopperInput('۰')}
+                            className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer bg-rose-50 px-2 py-0.5 rounded border border-rose-200"
+                          >
+                            صفر کردن مس
+                          </button>
+                        </div>
+                        <div className="relative rounded-xl shadow-sm">
+                          <input
+                            type="text"
+                            required
+                            value={directCopperInput}
+                            onChange={(e) => setDirectCopperInput(e.target.value)}
+                            placeholder="مثال: ۱۲۰"
+                            className="w-full pl-16 pr-4 py-3 bg-white border border-amber-300 rounded-xl text-slate-900 font-mono text-center font-black text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 transition shadow-sm"
+                          />
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-amber-800 font-bold">
+                            کیلوگرم
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Mode 2: RELATIVE DELTAS (+ / -) */}
+                  {adjustTypeMode === 'relative' && (
+                    <div className="space-y-4">
+                      {/* 4. تعدیل موجودی ریالی (تومان): */}
+                      <div className="bg-slate-50/60 border border-slate-200 p-3.5 rounded-2xl space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setAdjustCashMode('increase')}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                adjustCashMode === 'increase'
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                              }`}
+                            >
+                              + افزایش
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAdjustCashMode('decrease')}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                adjustCashMode === 'decrease'
+                                  ? 'bg-rose-600 text-white shadow-sm'
+                                  : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                              }`}
+                            >
+                              - کاهش
+                            </button>
+                          </div>
+                          <span className="text-xs font-bold text-slate-900">
+                            تعدیل موجودی ریالی (تومان):
+                          </span>
+                        </div>
+
+                        <div className="relative rounded-xl shadow-sm">
+                          <input
+                            type="text"
+                            value={adjustCashAmount}
+                            onChange={(e) => {
+                              const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
+                              const num = parseFloat(raw);
+                              setAdjustCashAmount(isNaN(num) ? '' : formatNumber(num));
+                            }}
+                            placeholder="۰"
+                            className="w-full pl-14 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-500 text-xs font-mono text-center font-bold"
+                          />
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
+                            تومان
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 5. تعدیل وزن مس (کیلوگرم): */}
+                      <div className="bg-amber-50/20 border border-amber-300/80 p-3.5 rounded-2xl space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setAdjustCopperMode('increase')}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                adjustCopperMode === 'increase'
+                                  ? 'bg-[#b45309] text-white shadow-sm'
+                                  : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                              }`}
+                            >
+                              + افزایش
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAdjustCopperMode('decrease')}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                adjustCopperMode === 'decrease'
+                                  ? 'bg-rose-600 text-white shadow-sm'
+                                  : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                              }`}
+                            >
+                              - کاهش
+                            </button>
+                          </div>
+                          <span className="text-xs font-bold text-amber-950">
+                            تعدیل وزن مس (کیلوگرم):
+                          </span>
+                        </div>
+
+                        <div className="relative rounded-xl shadow-sm">
+                          <input
+                            type="text"
+                            value={adjustCopperAmount}
+                            onChange={(e) => setAdjustCopperAmount(e.target.value)}
+                            placeholder="۰"
+                            className="w-full pl-16 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500 text-xs font-mono text-center font-bold"
+                          />
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
+                            کیلوگرم
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 6. علت اصلاح حساب */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold text-slate-800">
-                      تاریخ ثبت اصلاح <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        value={adjustDate}
-                        onChange={(e) => setAdjustDate(e.target.value)}
-                        placeholder="۱۴۰۵/۰۷/۱۱"
-                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-center text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      />
-                      <Calendar className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
-                    </div>
-                  </div>
-
-                  {/* 4. تعدیل موجودی ریالی (تومان): */}
-                  <div className="bg-slate-50/60 border border-slate-200 p-3.5 rounded-2xl space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setAdjustCashMode('increase')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            adjustCashMode === 'increase'
-                              ? 'bg-emerald-600 text-white shadow-sm'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                        >
-                          + افزایش
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAdjustCashMode('decrease')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            adjustCashMode === 'decrease'
-                              ? 'bg-rose-600 text-white shadow-sm'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                        >
-                          - کاهش
-                        </button>
-                      </div>
-                      <span className="text-xs font-bold text-slate-900">
-                        تعدیل موجودی ریالی (تومان):
-                      </span>
-                    </div>
-
-                    <div className="relative rounded-xl shadow-sm">
-                      <input
-                        type="text"
-                        value={adjustCashAmount}
-                        onChange={(e) => {
-                          const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
-                          const num = parseFloat(raw);
-                          setAdjustCashAmount(isNaN(num) ? '' : formatNumber(num));
-                        }}
-                        placeholder="۰"
-                        className="w-full pl-14 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-500 text-xs font-mono text-center font-bold"
-                      />
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
-                        تومان
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 5. تعدیل وزن مس (کیلوگرم): */}
-                  <div className="bg-amber-50/20 border border-amber-300/80 p-3.5 rounded-2xl space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setAdjustCopperMode('increase')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            adjustCopperMode === 'increase'
-                              ? 'bg-[#b45309] text-white shadow-sm'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                        >
-                          + افزایش
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAdjustCopperMode('decrease')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            adjustCopperMode === 'decrease'
-                              ? 'bg-rose-600 text-white shadow-sm'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                        >
-                          - کاهش
-                        </button>
-                      </div>
-                      <span className="text-xs font-bold text-amber-950">
-                        تعدیل وزن مس (کیلوگرم):
-                      </span>
-                    </div>
-
-                    <div className="relative rounded-xl shadow-sm">
-                      <input
-                        type="text"
-                        value={adjustCopperAmount}
-                        onChange={(e) => setAdjustCopperAmount(e.target.value)}
-                        placeholder="۰"
-                        className="w-full pl-16 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500 text-xs font-mono text-center font-bold"
-                      />
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
-                        کیلوگرم
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 6. علت اصلاح حساب * (الزامی) */}
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-red-600">
-                      علت اصلاح حساب * (الزامی)
+                      علت و شرح تغییر موجودی
                     </label>
                     <div className="relative">
                       <textarea
-                        required
                         value={adjustReason}
                         onChange={(e) => setAdjustReason(e.target.value)}
-                        placeholder="دلیل اصلاح (مثلاً: تخفیف ویژه، خطای ثبت قبلی، افت بار و پرتی، تسویه دستی...)"
-                        rows={2.5}
-                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        placeholder="دلیل تغییر (مثلاً: تنظیم مستقیم توسط مدیر، خطای ثبت قبلی، تسویه دستی...)"
+                        rows={2}
+                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
                       />
                       <FileText className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
                     </div>
@@ -3429,10 +4026,10 @@ export default function App() {
                   <div className="pt-2 flex gap-2.5">
                     <button
                       type="submit"
-                      className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-black py-3.5 px-6 rounded-xl transition duration-150 text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-3.5 px-6 rounded-xl transition duration-150 text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
                     >
                       <Sliders className="w-4 h-4" />
-                      <span>ثبت سند اصلاح حساب</span>
+                      <span>{adjustTypeMode === 'direct' ? 'ثبت و اعمال مستقیم موجودی‌های جدید' : 'ثبت سند اصلاح حساب'}</span>
                     </button>
                     <button
                       type="button"
@@ -3845,6 +4442,503 @@ export default function App() {
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 12. MODAL: "ریست کارخانه و صفر کردن موجودی‌ها (Factory Reset)" */}
+      {activeModal === 'factory_reset' && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto" dir="rtl">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 my-6">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-rose-900 via-slate-900 to-slate-900 text-white p-5 flex justify-between items-center shadow-sm">
+              <button 
+                type="button" 
+                onClick={() => setActiveModal(null)} 
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white border border-white/10 flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <h3 className="text-base font-black text-white">حذف کارخانه و صفر کردن سیستم</h3>
+                  <p className="text-[11px] text-rose-300 mt-0.5">پاکسازی موجودی‌ها، انبار و همگام‌سازی کامل با دیتابیس</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-400/30 text-rose-400 flex items-center justify-center shadow-inner">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 md:p-6 space-y-4">
+
+              {/* Warning Alert Banner */}
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
+                <div className="flex items-center gap-2 font-black text-amber-950">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>هشدار بازنشانی و همگام‌سازی دیتابیس آنلاین</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed pr-6">
+                  با تایید این بخش، تمام موجودی‌های ثبت‌شده از قبل (موجودی ریالی کیف پول‌ها و موجودی لوله مسی) صفر می‌شوند و اسناد و تراکنش‌ها پاک شده و این تغییرات فوراً در پایگاه داده (Supabase) ثبت می‌گردد.
+                </p>
+              </div>
+
+              {/* Status Preview Card */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2 text-xs">
+                <span className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                  خلاصه اطلاعات که به صفر تغییر خواهند یافت:
+                </span>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-400 block text-[10px]">کل موجودی ریالی فعلی:</span>
+                    <span className="font-black text-slate-900 font-mono mt-0.5 block">{formatNumber(totalCashPool)} تومان</span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-400 block text-[10px]">کل موجودی مس فعلی:</span>
+                    <span className="font-black text-amber-700 font-mono mt-0.5 block">{formatKg(totalCopperPool)} کیلوگرم</span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-400 block text-[10px]">موجودی انبار مرکزی:</span>
+                    <span className="font-black text-slate-900 font-mono mt-0.5 block">{formatKg(companyWarehouseCopper)} کیلوگرم</span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-400 block text-[10px]">تعداد تراکنش‌های ثبت‌شده:</span>
+                    <span className="font-black text-slate-900 font-mono mt-0.5 block">{transactions.length} فقره سند</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Success Message Banner */}
+              {resetSuccessMessage && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 font-bold animate-in fade-in">
+                  <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
+                  <span>{resetSuccessMessage}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="space-y-2.5 pt-2">
+                <button
+                  type="button"
+                  disabled={isResetting}
+                  onClick={() => handleFactoryReset('zero_balances')}
+                  className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black py-3.5 px-4 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                >
+                  <RotateCcw className={`w-4 h-4 ${isResetting ? 'animate-spin' : ''}`} />
+                  <span>{isResetting ? 'در حال صفر کردن و سینک دیتابیس...' : 'صفر کردن تمام موجودی‌ها و اسناد (سینک کامل دیتابیس)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isResetting}
+                  onClick={() => handleFactoryReset('full_factory_reset')}
+                  className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-black py-3 px-4 rounded-xl transition text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Database className="w-4 h-4 text-amber-400" />
+                  <span>بازنشانی کامل سیستم به تنظیمات اولیه کارخانه (حذف حساب‌های تستی اضافه)</span>
+                </button>
+              </div>
+
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveModal(null)}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl transition text-xs cursor-pointer"
+                >
+                  بستن پنجره
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 13. MODAL: "تایید حذف حساب کاربری" (Delete Customer Confirmation) */}
+      {customerToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto" dir="rtl">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 my-6">
+            
+            {/* Header */}
+            <div className="bg-rose-600 text-white p-5 flex justify-between items-center">
+              <button 
+                type="button" 
+                onClick={() => setCustomerToDelete(null)} 
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <h3 className="text-base font-black text-white">حذف حساب کاربری</h3>
+                  <p className="text-[11px] text-rose-100 mt-0.5">حذف دائم از سیستم و پایگاه داده</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-white/20 text-white flex items-center justify-center">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-xs text-slate-700 leading-relaxed text-right space-y-2">
+                <p>
+                  آیا از حذف حساب کاربری <strong className="text-rose-600 font-extrabold text-sm font-sans">{customerToDelete.name}</strong> اطمینان کامل دارید؟
+                </p>
+                <p className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  ⚠️ این عملیات غیرقابل بازگشت است؛ تمامی تراکنش‌ها، موجودی‌ها و اسناد این شخص مستقیماً از پایگاه داده آنلاین (Supabase) و سیستم حذف خواهند شد.
+                </p>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  disabled={isDeletingCustomer}
+                  onClick={confirmDeleteCustomer}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black py-3 px-4 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeletingCustomer ? 'در حال حذف از دیتابیس...' : 'بله، حذف قطعی حساب'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCustomerToDelete(null)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-5 rounded-xl transition text-xs cursor-pointer"
+                >
+                  انصراف
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 14. MODAL: "دفتر مدیریت چک‌های صیادی و وصول اسناد در راه" (Manage Checks) */}
+      {activeModal === 'manage_checks' && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto" dir="rtl">
+          <div className="bg-white rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-slate-100 my-6 animate-in fade-in zoom-in-95 duration-150">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950 text-white p-5 flex justify-between items-center border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shadow font-bold">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div className="text-right">
+                  <h4 className="text-base font-black text-white">دفتر مدیریت چک‌های صیادی و اسناد در راه</h4>
+                  <p className="text-xs text-amber-200/80 mt-0.5">
+                    وصول فوری، نظارت بر سررسیدها و مدیریت اسناد در انتظار واریز به کیف پول
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="text-slate-400 hover:text-white hover:bg-slate-800 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content & Tabs */}
+            <div className="p-4 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              
+              {/* Notice Banner */}
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-950 leading-relaxed font-bold">
+                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <span>قانون حسابداری مس و اته:</span>
+                  <span className="font-normal block mt-0.5 text-amber-900">
+                    تا زمانی که چک پاس نشده، مبلغ آن در ستون «اسناد درراه» نگهداری شده و به موجودی نقدی اضافه نمی‌گردد. هر زمان چک توسط بانک پاس شد (یا حتی پیش از موعد)، کافیست دکمه سبز <strong>«تیک پاس شدن چک»</strong> را بزنید تا مبلغ مستقیماً به کیف پول مشتری واریز شود.
+                  </span>
+                </div>
+              </div>
+
+              {/* Tabs: Pending vs Cleared */}
+              {(() => {
+                const visibleChecks = transactions.filter(t => 
+                  (currentUser.role === 'admin' || t.customerId === currentUser.id) &&
+                  (t.checkNumber || t.type === 'check_register')
+                );
+                const pendingChecks = visibleChecks.filter(t => t.status === 'pending');
+                const clearedChecks = visibleChecks.filter(t => t.status === 'completed');
+
+                return (
+                  <div className="space-y-4">
+                    <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-black">
+                      <button
+                        type="button"
+                        onClick={() => setCheckbookTab('pending')}
+                        className={`flex-1 py-2.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          checkbookTab === 'pending'
+                            ? 'bg-amber-500 text-slate-950 shadow-sm font-extrabold'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>چک‌های در انتظار وصول ({toPersianDigits(pendingChecks.length)})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCheckbookTab('cleared')}
+                        className={`flex-1 py-2.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          checkbookTab === 'cleared'
+                            ? 'bg-emerald-600 text-white shadow-sm font-extrabold'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>چک‌های وصول‌شده و آرشیو ({toPersianDigits(clearedChecks.length)})</span>
+                      </button>
+                    </div>
+
+                    {/* Pending Tab Content */}
+                    {checkbookTab === 'pending' && (
+                      <div className="space-y-3">
+                        {pendingChecks.length === 0 ? (
+                          <div className="p-8 text-center text-slate-400 font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                            در حال حاضر هیچ چک پاس‌نشده‌ای در جریان وصول وجود ندارد.
+                          </div>
+                        ) : (
+                          pendingChecks.map(check => {
+                            const cust = customers.find(c => c.id === check.customerId);
+                            return (
+                              <div key={check.id} className="bg-white p-4 rounded-2xl border-2 border-amber-200 hover:border-amber-400 shadow-sm transition space-y-3 text-right">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                                  <div className="flex items-center gap-2">
+                                    <span className="bg-amber-100 text-amber-900 font-mono font-black px-2.5 py-1 rounded-lg text-xs border border-amber-300">
+                                      شناسه صیاد: {check.checkNumber || 'ثبت‌شده'}
+                                    </span>
+                                    <span className="font-extrabold text-slate-900 text-sm">
+                                      صاحب حساب: {check.customerName}
+                                    </span>
+                                  </div>
+
+                                  <div className="font-mono text-left">
+                                    <span className="text-[10px] text-slate-400 ml-1">مبلغ چک:</span>
+                                    <span className="text-base font-black text-emerald-600">
+                                      {formatNumber(check.totalAmount)} تومان
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-600">
+                                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                    <span className="text-slate-400 text-[10px] block">نوع معامله / سند:</span>
+                                    <span className="font-bold text-slate-800">
+                                      {check.type === 'sell' ? 'فروش لوله مسی با چک' : 'چک تضمین مسدود مس'}
+                                    </span>
+                                  </div>
+                                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                    <span className="text-slate-400 text-[10px] block">تاریخ ثبت معامله:</span>
+                                    <span className="font-mono font-bold text-slate-800">{check.date}</span>
+                                  </div>
+                                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                    <span className="text-slate-400 text-[10px] block">موجودی فعلی کیف پول:</span>
+                                    <span className="font-mono font-bold text-slate-800">{formatNumber(cust?.walletCash || 0)} ت</span>
+                                  </div>
+                                </div>
+
+                                <p className="text-xs text-slate-500 bg-amber-50/50 p-2.5 rounded-xl border border-amber-100 font-medium">
+                                  {check.description}
+                                </p>
+
+                                {/* Action button: Ticking / Passing the Check */}
+                                <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                  <div className="text-[11px] text-amber-800 font-bold flex items-center gap-1">
+                                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>با زدن تیک، مبلغ بلافاصله به کیف پول مشتری واریز می‌شود:</span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setCheckToPass(check)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                                    <span>تیک پاس شدن چک (وصول فوری)</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+
+                    {/* Cleared Tab Content */}
+                    {checkbookTab === 'cleared' && (
+                      <div className="space-y-3">
+                        {clearedChecks.length === 0 ? (
+                          <div className="p-8 text-center text-slate-400 font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                            هنوز هیچ چکی وصول و آرشیو نشده است.
+                          </div>
+                        ) : (
+                          clearedChecks.map(check => (
+                            <div key={check.id} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex items-center justify-between text-xs text-right">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-emerald-100 text-emerald-900 font-mono font-bold px-2 py-0.5 rounded text-[11px]">
+                                    صیاد: {check.checkNumber}
+                                  </span>
+                                  <span className="font-extrabold text-slate-900">{check.customerName}</span>
+                                </div>
+                                <span className="text-[10px] text-slate-500 block">{check.description}</span>
+                              </div>
+
+                              <div className="text-left font-mono">
+                                <span className="font-black text-emerald-700 text-sm block">
+                                  {formatNumber(check.totalAmount)} ت
+                                </span>
+                                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5">
+                                  <Check className="w-3 h-3" />
+                                  <span>وصول و واریز شد</span>
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer transition"
+              >
+                بستن پنجره
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 15. MODAL: "تأیید پاس شدن چک صیادی" (Confirm Pass Check Modal) */}
+      {checkToPass && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto" dir="rtl">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 my-6">
+            
+            {/* Header */}
+            <div className="bg-emerald-600 text-white p-5 flex justify-between items-center">
+              <button 
+                type="button" 
+                onClick={() => setCheckToPass(null)} 
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <h3 className="text-base font-black text-white">تأیید پاس شدن چک صیادی</h3>
+                  <p className="text-[11px] text-emerald-100 mt-0.5">وصول وجه و واریز مستقیم به موجودی نقدی</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-white/20 text-white flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            {(() => {
+              const cust = customers.find(c => c.id === checkToPass.customerId);
+              const curCash = cust?.walletCash || 0;
+              const newCash = curCash + checkToPass.totalAmount;
+
+              return (
+                <div className="p-6 space-y-4 text-right">
+                  <p className="text-xs text-slate-700 leading-relaxed">
+                    آیا اطمینان دارید چک صیادی شماره <strong className="font-mono font-black text-slate-900 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">{checkToPass.checkNumber || 'ثبت‌شده'}</strong> پاس شده است؟
+                  </p>
+
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">طرف حساب دریافت‌کننده:</span>
+                      <span className="font-black text-slate-900">{checkToPass.customerName}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-slate-200/80 pt-2">
+                      <span className="text-slate-500 font-medium">مبلغ چک صیادی:</span>
+                      <span className="font-mono font-black text-emerald-600 text-sm">
+                        {formatNumber(checkToPass.totalAmount)} تومان
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-slate-200/80 pt-2">
+                      <span className="text-slate-500 font-medium">موجودی فعلی کیف پول:</span>
+                      <span className="font-mono font-bold text-slate-700">
+                        {formatNumber(curCash)} تومان
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-slate-200/80 pt-2 bg-emerald-50 -mx-4 -mb-4 p-3 rounded-b-2xl border-t border-emerald-200">
+                      <span className="text-emerald-950 font-black">موجودی نقدی پس از پاس شدن:</span>
+                      <span className="font-mono font-black text-emerald-800 text-sm">
+                        {formatNumber(newCash)} تومان
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={isPassingCheck}
+                      onClick={() => handlePassCheck(checkToPass.id)}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black py-3 px-4 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                      <span>{isPassingCheck ? 'در حال ثبت وصول...' : 'بله، تیک پاس شدن را بزن'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCheckToPass(null)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-5 rounded-xl transition text-xs cursor-pointer"
+                    >
+                      انصراف
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+          </div>
+        </div>
+      )}
+
+      {/* 16. TOAST NOTIFICATION: Feedback for users */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 left-5 md:left-auto md:w-96 z-50 animate-in fade-in slide-in-from-bottom-5 duration-200" dir="rtl">
+          <div className={`p-4 rounded-2xl shadow-2xl border flex items-start gap-3 ${
+            toastMessage.type === 'success' 
+              ? 'bg-slate-900 text-white border-emerald-500' 
+              : toastMessage.type === 'error'
+              ? 'bg-slate-900 text-white border-rose-500'
+              : 'bg-slate-900 text-white border-amber-500'
+          }`}>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+              toastMessage.type === 'success' ? 'bg-emerald-500 text-slate-950' : 'bg-amber-500 text-slate-950'
+            }`}>
+              {toastMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
+            </div>
+            <div className="flex-1 text-right space-y-1">
+              <h5 className="text-xs font-black text-white">{toastMessage.title}</h5>
+              <p className="text-[11px] text-slate-300 leading-relaxed font-medium">{toastMessage.desc}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastMessage(null)}
+              className="text-slate-400 hover:text-white p-1 rounded-lg transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}
