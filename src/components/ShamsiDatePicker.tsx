@@ -49,6 +49,60 @@ export const getOffsetShamsiDate = (days: number): string => {
   }
 };
 
+export const shamsiToGregorian = (shamsiStr: string): Date => {
+  if (!shamsiStr) return new Date();
+  const clean = toEnglishDigits(shamsiStr).replace(/[^0-9/]/g, '');
+  const parts = clean.split('/');
+  let jy = parseInt(parts[0], 10) || 1405;
+  let jm = parseInt(parts[1], 10) || 7;
+  let jd = parseInt(parts[2], 10) || 11;
+
+  jy += 1595;
+  let days = -355668 + (365 * jy) + Math.floor(jy / 33) * 8 + Math.floor(((jy % 33) + 3) / 4) + jd + ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
+
+  let gy = 400 * Math.floor(days / 146097);
+  days %= 146097;
+  if (days > 36524) {
+    days--;
+    gy += 100 * Math.floor(days / 36524);
+    days %= 36524;
+    if (days >= 365) days++;
+  }
+  gy += 4 * Math.floor(days / 1461);
+  days %= 1461;
+  if (days > 365) {
+    gy += Math.floor((days - 1) / 365);
+    days = (days - 1) % 365;
+  }
+  let gd = days + 1;
+  const sal_a = [0, 31, ((gy % 4 === 0 && gy % 100 !== 0) || (gy % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let gm = 0;
+  for (gm = 0; gm < 13 && gd > sal_a[gm]; gm++) {
+    gd -= sal_a[gm];
+  }
+  return new Date(gy, gm - 1, gd);
+};
+
+export const getPersianDayOfWeek = (shamsiStr: string): string => {
+  if (!shamsiStr) return '';
+  try {
+    const gDate = shamsiToGregorian(shamsiStr);
+    const dayIndex = gDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    const days = [
+      'یکشنبه',
+      'دوشنبه',
+      'سه‌شنبه',
+      'چهارشنبه',
+      'پنج‌شنبه',
+      'جمعه',
+      'شنبه'
+    ];
+    return days[dayIndex] || '';
+  } catch {
+    return '';
+  }
+};
+
 export interface ShamsiDatePreset {
   label: string;
   daysOffset: number;

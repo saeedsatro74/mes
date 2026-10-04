@@ -41,7 +41,8 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { supabase, DbCustomer, DbTransaction, DbCompanySettings } from './lib/supabase';
-import { ShamsiDatePicker, toEnglishDigits, toPersianDigits, getTodayShamsi, getOffsetShamsiDate } from './components/ShamsiDatePicker';
+import { ShamsiDatePicker, toEnglishDigits, toPersianDigits, getTodayShamsi, getOffsetShamsiDate, getPersianDayOfWeek } from './components/ShamsiDatePicker';
+import { WattehLogo } from './components/WattehLogo';
 
 // Core Interfaces
 interface Customer {
@@ -82,56 +83,95 @@ const INITIAL_CUSTOMERS: Customer[] = [
     name: 'جواد شکرالهی',
     mobile: '09127697501',
     walletCash: 0,
-    copperBalance: 0,
-    sharePercentage: 0,
-    realizedProfit: 0,
-    profitChangePercent: 0,
-    averageBuyPrice: 0,
+    copperBalance: 322.01,
+    sharePercentage: 40.56,
+    realizedProfit: 284547109,
+    profitChangePercent: 27.3,
+    averageBuyPrice: 3240000,
     inTransitChecks: 0,
     blockedCopper: 0,
   },
   {
     id: 'c2',
-    name: 'علی ظفری پور',
-    mobile: '09134263654',
+    name: 'شقایق شفیع',
+    mobile: '09191628233',
     walletCash: 0,
-    copperBalance: 0,
-    sharePercentage: 0,
+    copperBalance: 32.26,
+    sharePercentage: 4.06,
     realizedProfit: 0,
     profitChangePercent: 0,
-    averageBuyPrice: 0,
+    averageBuyPrice: 3100000,
     inTransitChecks: 0,
     blockedCopper: 0,
   },
   {
     id: 'c3',
-    name: 'سعید صمیمی پور',
-    mobile: '09379900697',
+    name: 'علی ظفری پور',
+    mobile: '09134263654',
     walletCash: 0,
-    copperBalance: 0,
-    sharePercentage: 0,
-    realizedProfit: 0,
-    profitChangePercent: 0,
-    averageBuyPrice: 0,
+    copperBalance: 310.94,
+    sharePercentage: 39.17,
+    realizedProfit: 9273000,
+    profitChangePercent: 3.1,
+    averageBuyPrice: 2830000,
     inTransitChecks: 0,
     blockedCopper: 0,
   },
   {
     id: 'c4',
     name: 'مرتضی محمدی',
-    mobile: '09123456789',
+    mobile: '09936300529',
     walletCash: 0,
-    copperBalance: 0,
-    sharePercentage: 0,
-    realizedProfit: 0,
-    profitChangePercent: 0,
-    averageBuyPrice: 0,
+    copperBalance: 128.69,
+    sharePercentage: 16.21,
+    realizedProfit: 24560000,
+    profitChangePercent: 8.5,
+    averageBuyPrice: 3100000,
     inTransitChecks: 0,
     blockedCopper: 0,
   }
 ];
 
-const INITIAL_TRANSACTIONS: Transaction[] = [];
+const INITIAL_TRANSACTIONS: Transaction[] = [
+  // 16 Transactions for Javad Shokrollahi (c1)
+  { id: 'tx_j1', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'buy', date: '1405/06/23', time: '14:30', amountKg: 124.25, ratePerKg: 3240000, totalAmount: 402570000, status: 'completed', afterWalletCash: 0, description: 'خرید مس - فروشنده: شرکت مس واته' },
+  { id: 'tx_j2', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'buy', date: '1405/06/16', time: '11:15', amountKg: 68.31, ratePerKg: 3100000, totalAmount: 211765000, status: 'completed', afterWalletCash: 402570000, description: 'خرید مس - فروشنده: شرکت مس واته' },
+  { id: 'tx_j3', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '18:45', amountKg: 17.80, ratePerKg: 3100000, totalAmount: 55180000, profitVal: 6148252, status: 'completed', afterWalletCash: 614335000, description: 'فروش به خارج (خریدار بیرونی)' },
+  { id: 'tx_j4', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '17:20', amountKg: 29.10, ratePerKg: 3200000, totalAmount: 93120000, profitVal: 12961355, status: 'completed', afterWalletCash: 559155000, description: 'فروش به خارج (خریدار بیرونی)' },
+  { id: 'tx_j5', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '16:10', amountKg: 127.80, ratePerKg: 3150000, totalAmount: 402570000, profitVal: 50533065, status: 'completed', afterWalletCash: 466035000, description: 'فروش به خارج (خریدار بیرونی)' },
+  { id: 'tx_j6', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '15:00', amountKg: 156, ratePerKg: 3300000, totalAmount: 514800000, profitVal: 85083553, status: 'completed', afterWalletCash: 63465000, description: 'فروش به خارج (خریدار بیرونی)' },
+  { id: 'tx_j7', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '14:10', amountKg: 2.30, ratePerKg: 3000000, totalAmount: 6900000, profitVal: 564437, status: 'completed', afterWalletCash: 63465000, description: 'فروش به انبار شرکت (تحویل به شرکت) - درخواست فروش ۲.۳۰ کیلوگرم مس با نرخ ۳,۰۰۰,۰۰۰ تومان' },
+  { id: 'tx_j8', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '13:30', amountKg: 21.10, ratePerKg: 2850000, totalAmount: 60135000, profitVal: 2013096, status: 'completed', afterWalletCash: 56565000, description: 'فروش به انبار شرکت (تحویل به شرکت) - درخواست فروش ۲۱.۱۰ کیلوگرم مس با نرخ ۲,۸۵۰,۰۰۰ تومان' },
+  { id: 'tx_j9', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'buy', date: '1405/06/15', time: '12:00', amountKg: 353.36, ratePerKg: 2830000, totalAmount: 1000000000, status: 'completed', afterWalletCash: 0, description: 'درخواست خرید مس با بودجه ۱,۰۰۰,۰۰۰,۰۰۰ تومان معادل ۳۵۳.۳۶ کیلوگرم' },
+  { id: 'tx_j10', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '11:20', amountKg: 4.40, ratePerKg: 2950000, totalAmount: 12980000, profitVal: 1760042, status: 'completed', afterWalletCash: 996430000, description: 'فروش به انبار شرکت (تحویل به شرکت) - درخواست فروش ۴.۴۰ کیلوگرم مس با نرخ ۲,۹۵۰,۰۰۰ تومان' },
+  { id: 'tx_j11', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '10:40', amountKg: 21.10, ratePerKg: 2800000, totalAmount: 59080000, profitVal: 5375302, status: 'completed', afterWalletCash: 983450000, description: 'درخواست فروش ۲۱.۱۰ کیلوگرم مس با نرخ ۲,۸۰۰,۰۰۰ تومان به خریدار بیرونی' },
+  { id: 'tx_j12', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '10:15', amountKg: 1.80, ratePerKg: 3200000, totalAmount: 5760000, profitVal: 1170017, status: 'completed', afterWalletCash: 924370000, description: 'درخواست فروش ۱.۸۰ کیلوگرم مس با نرخ ۳,۲۰۰,۰۰۰ تومان به خریدار بیرونی' },
+  { id: 'tx_j13', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '09:50', amountKg: 53.10, ratePerKg: 3100000, totalAmount: 164610000, profitVal: 29305508, status: 'completed', afterWalletCash: 918610000, description: 'درخواست فروش ۵۳.۱۰ کیلوگرم مس با نرخ ۳,۱۰۰,۰۰۰ تومان به خریدار بیرونی' },
+  { id: 'tx_j14', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'sell', date: '1405/06/15', time: '09:10', amountKg: 260, ratePerKg: 2900000, totalAmount: 754000000, profitVal: 91002486, status: 'completed', afterWalletCash: 754000000, description: 'درخواست فروش ۲۶۰ کیلوگرم مس با نرخ ۲,۹۰۰,۰۰۰ تومان به خریدار بیرونی' },
+  { id: 'tx_j15', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'buy', date: '1405/06/15', time: '08:30', amountKg: 470.59, ratePerKg: 2550000, totalAmount: 1200000000, status: 'completed', afterWalletCash: 0, description: 'درخواست خرید مس با بودجه ۱,۲۰۰,۰۰۰,۰۰۰ تومان معادل ۴۷۰.۵۹ کیلوگرم' },
+  { id: 'tx_j16', customerId: 'c1', customerName: 'جواد شکرالهی', type: 'deposit', date: '1405/06/15', time: '08:00', totalAmount: 1200000000, status: 'completed', afterWalletCash: 1200000000, description: 'واریز وجه نقدی به کیف پول' },
+
+  // 2 Transactions for Shaghayeq Shafie (c2)
+  { id: 'tx_s1', customerId: 'c2', customerName: 'شقایق شفیع', type: 'buy', date: '1405/06/18', time: '11:00', amountKg: 32.26, ratePerKg: 3100000, totalAmount: 100000000, status: 'completed', afterWalletCash: 0, description: 'خرید مس - فروشنده: شرکت مس واته' },
+  { id: 'tx_s2', customerId: 'c2', customerName: 'شقایق شفیع', type: 'deposit', date: '1405/06/18', time: '10:30', totalAmount: 100000000, status: 'completed', afterWalletCash: 100000000, description: 'واریز وجه نقدی به کیف پول' },
+
+  // 5 Transactions for Ali Zafaripour (c3)
+  { id: 'tx_z1', customerId: 'c3', customerName: 'علی ظفری پور', type: 'buy', date: '1405/06/14', time: '16:00', amountKg: 105.57, ratePerKg: 2830000, totalAmount: 298755500, status: 'completed', afterWalletCash: 0, description: 'درخواست خرید مس با بودجه ۲۹۸,۷۵۵,۵۰۰ تومان معادل ۱۰۵.۵۷ کیلوگرم' },
+  { id: 'tx_z2', customerId: 'c3', customerName: 'علی ظفری پور', type: 'buy', date: '1405/06/14', time: '14:30', amountKg: 31.47, ratePerKg: 2750000, totalAmount: 86542500, status: 'completed', afterWalletCash: 298755500, description: 'درخواست خرید ۳۱.۴۷ کیلوگرم مس با نرخ ۲,۷۵۰,۰۰۰ تومان' },
+  { id: 'tx_z3', customerId: 'c3', customerName: 'علی ظفری پور', type: 'sell', date: '1405/06/14', time: '13:00', amountKg: 28.10, ratePerKg: 3080000, totalAmount: 86548000, profitVal: 9273000, status: 'completed', afterWalletCash: 385298000, description: 'درخواست فروش ۲۸.۱۰ کیلوگرم مس با نرخ ۳,۰۸۰,۰۰۰ تومان به خریدار بیرونی' },
+  { id: 'tx_z4', customerId: 'c3', customerName: 'علی ظفری پور', type: 'buy', date: '1405/06/14', time: '11:00', amountKg: 202, ratePerKg: 2750000, totalAmount: 555500000, status: 'completed', afterWalletCash: 298750000, description: 'درخواست خرید ۲۰۲ کیلوگرم مس با نرخ ۲,۷۵۰,۰۰۰ تومان' },
+  { id: 'tx_z5', customerId: 'c3', customerName: 'علی ظفری پور', type: 'deposit', date: '1405/06/14', time: '09:30', totalAmount: 854250000, status: 'completed', afterWalletCash: 854250000, description: 'واریز وجه نقدی به کیف پول' },
+
+  // 7 Transactions for Morteza Mohammadi (c4)
+  { id: 'tx_m1', customerId: 'c4', customerName: 'مرتضی محمدی', type: 'buy', date: '1405/06/23', time: '10:00', amountKg: 40.12, ratePerKg: 3240000, totalAmount: 130000000, status: 'completed', afterWalletCash: 0, description: 'خرید مس - فروشنده: شرکت مس واته' },
+  { id: 'tx_m2', customerId: 'c4', customerName: 'مرتضی محمدی', type: 'deposit', date: '1405/06/20', time: '15:20', totalAmount: 130000000, status: 'completed', afterWalletCash: 130000000, description: 'واریز وجه نقدی به کیف پول' },
+  { id: 'tx_m3', customerId: 'c4', customerName: 'مرتضی محمدی', type: 'buy', date: '1405/06/16', time: '12:40', amountKg: 88.57, ratePerKg: 3100000, totalAmount: 274560000, status: 'completed', afterWalletCash: 0, description: 'خرید مس - فروشنده: شرکت مس واته' },
+  { id: 'tx_m4', customerId: 'c4', customerName: 'مرتضی محمدی', type: 'deposit', date: '1405/06/16', time: '10:10', totalAmount: 100000000, status: 'completed', afterWalletCash: 274560000, description: 'واریز وجه نقدی به کیف پول' },
+  { id: 'tx_m5', customerId: 'c4', customerName: 'مرتضی محمدی', type: 'sell', date: '1405/06/14', time: '17:00', amountKg: 54.55, ratePerKg: 3200000, totalAmount: 174560000, profitVal: 24560000, status: 'completed', afterWalletCash: 174560000, description: 'درخواست فروش ۵۴.۵۵ کیلوگرم مس با نرخ ۳,۲۰۰,۰۰۰ تومان به خریدار بیرونی' },
+  { id: 'tx_m6', customerId: 'c4', customerName: 'مرتضی محمدی', type: 'buy', date: '1405/06/14', time: '12:00', amountKg: 54.55, ratePerKg: 2750000, totalAmount: 150000000, status: 'completed', afterWalletCash: 0, description: 'درخواست خرید مس با بودجه ۱۵۰,۰۰۰,۰۰۰ تومان معادل ۵۴.۵۵ کیلوگرم' },
+  { id: 'tx_m7', customerId: 'c4', customerName: 'مرتضی محمدی', type: 'deposit', date: '1405/06/14', time: '09:00', totalAmount: 150000000, status: 'completed', afterWalletCash: 150000000, description: 'واریز وجه نقدی به کیف پول' }
+];
+
 
 const getFutureShamsiDate = (days: number): string => getOffsetShamsiDate(days);
 
@@ -155,7 +195,7 @@ export default function App() {
 
   const [adminPassword, setAdminPassword] = useState<string>(() => {
     const saved = localStorage.getItem('vateh_admin_password_v5');
-    return saved || 'milad@68';
+    return saved || '';
   });
 
   const [loginTab, setLoginTab] = useState<'customer' | 'admin'>('customer');
@@ -211,7 +251,10 @@ export default function App() {
   const [checkbookTab, setCheckbookTab] = useState<'pending' | 'cleared'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [clientFilterType, setClientFilterType] = useState<'all' | 'copper' | 'cash'>('all');
+  const [adminMainTab, setAdminMainTab] = useState<'customers' | 'all_transactions'>('customers');
   const [txSubFilter, setTxSubFilter] = useState<'all' | 'buy' | 'sell' | 'deposit' | 'withdraw' | 'checks'>('all');
+  const [txSortOrder, setTxSortOrder] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'>('date_desc');
+  const [txSearchQuery, setTxSearchQuery] = useState('');
 
   // Action states for the 5 forms
   // 1. Buy copper
@@ -387,18 +430,34 @@ export default function App() {
       try {
         // 1. Fetch Customers
         const { data: custData, error: custErr } = await supabase.from('customers').select('*').order('created_at', { ascending: true });
-        if (!custErr && custData && custData.length > 0 && isMounted) {
+        if (!custErr && custData && custData.length >= 4 && isMounted) {
           setCustomers(custData.map(mapDbCustomer));
-        } else if (!custErr && custData && custData.length === 0) {
-          // Seed Supabase if empty
+        } else if (isMounted) {
+          // Seed Supabase with initial 4 customers if empty or incomplete
           const seedData = INITIAL_CUSTOMERS.map(mapCustomerToDb);
-          await supabase.from('customers').insert(seedData);
+          await supabase.from('customers').upsert(seedData);
+          const { data: refreshedCust } = await supabase.from('customers').select('*').order('created_at', { ascending: true });
+          if (refreshedCust && refreshedCust.length > 0 && isMounted) {
+            setCustomers(refreshedCust.map(mapDbCustomer));
+          } else if (isMounted) {
+            setCustomers(INITIAL_CUSTOMERS);
+          }
         }
 
         // 2. Fetch Transactions
         const { data: txData, error: txErr } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
-        if (!txErr && txData && isMounted) {
+        if (!txErr && txData && txData.length >= 30 && isMounted) {
           setTransactions(txData.map(mapDbTransaction));
+        } else if (isMounted) {
+          // Seed Supabase with all 30 initial transactions if empty or incomplete
+          const seedTxs = INITIAL_TRANSACTIONS.map(mapTransactionToDb);
+          await supabase.from('transactions').upsert(seedTxs);
+          const { data: refreshedTxs } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+          if (refreshedTxs && refreshedTxs.length > 0 && isMounted) {
+            setTransactions(refreshedTxs.map(mapDbTransaction));
+          } else if (isMounted) {
+            setTransactions(INITIAL_TRANSACTIONS);
+          }
         }
 
         // 3. Fetch Company Settings
@@ -1490,6 +1549,33 @@ export default function App() {
     }
   };
 
+  // Load official PDF backup data (4 customers, 30 transactions) into state, localStorage, and Supabase
+  const handleLoadOfficialPdfBackupData = async () => {
+    setIsResetting(true);
+    try {
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(INITIAL_CUSTOMERS));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(INITIAL_TRANSACTIONS));
+      setCustomers(INITIAL_CUSTOMERS);
+      setTransactions(INITIAL_TRANSACTIONS);
+
+      // Sync to Supabase
+      await supabase.from('customers').upsert(INITIAL_CUSTOMERS.map(mapCustomerToDb));
+      await supabase.from('transactions').upsert(INITIAL_TRANSACTIONS.map(mapTransactionToDb));
+
+      setToastMessage({
+        title: 'بارگذاری کامل بک‌آپ ۳۰ سند مالی',
+        desc: 'اطلاعات کامل ۴ حساب و ۳۰ تراکنش شهریور ۱۴۰۵ با موفقیت در دیتابیس آنلاین جایگذاری و سینک گردید.',
+        type: 'success'
+      });
+      setResetSuccessMessage('اطلاعات کامل ۴ حساب و ۳۰ سند مالی با موفقیت روی سیستم و دیتابیس Supabase بارگذاری شد.');
+    } catch (err) {
+      console.error('Error loading backup data:', err);
+      alert('خطا در بارگذاری اطلاعات روی دیتابیس.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   // Open Standalone Print/PDF Export Window
   const handleOpenPdfPrintWindow = () => {
     const totalWalletCash = customers.reduce((sum, c) => sum + (c.walletCash || 0), 0);
@@ -1566,6 +1652,7 @@ export default function App() {
           </div>
           <div style="text-align: left; font-size: 11px; background: #f8fafc; padding: 8px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <div><strong>تاریخ بک‌آپ:</strong> ${getTodayShamsi()}</div>
+            <div><strong>روز هفته:</strong> ${getPersianDayOfWeek(getTodayShamsi())}</div>
             <div><strong>زمان ثبت:</strong> ${new Date().toLocaleTimeString('fa-IR')}</div>
             <div><strong>صادرکننده:</strong> ${currentUser?.name || 'مدیریت'}</div>
           </div>
@@ -1622,7 +1709,7 @@ export default function App() {
                 <th>شناسه صیادی</th>
                 <th>مشتری</th>
                 <th style="text-align: center;">مبلغ (تومان)</th>
-                <th style="text-align: center;">تاریخ ثبت</th>
+                <th style="text-align: center;">روز و تاریخ ثبت</th>
                 <th>شرح</th>
               </tr>
             </thead>
@@ -1632,7 +1719,7 @@ export default function App() {
                   <td style="font-weight: 700; color: #1e40af;">${ch.checkNumber || '-'}</td>
                   <td>${ch.customerName}</td>
                   <td style="text-align: center; font-weight: 900;">${formatNumber(ch.totalAmount)}</td>
-                  <td style="text-align: center;">${ch.date}</td>
+                  <td style="text-align: center;"><strong style="color:#b45309;">${getPersianDayOfWeek(ch.date)}</strong> ${ch.date}</td>
                   <td>${ch.description || ''}</td>
                 </tr>
               `).join('')}
@@ -1654,18 +1741,22 @@ export default function App() {
               <table style="width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 0;">
                 <thead>
                   <tr style="background: #fafafa;">
-                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 15%;">تاریخ و زمان</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 20%;">روز هفته / تاریخ و زمان</th>
                     <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 15%;">نوع معامله</th>
                     <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 12%;">وزن مس (kg)</th>
                     <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 15%;">مبلغ کل (تومان)</th>
                     <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; text-align: center; width: 15%;">کیف پول بعد معامله</th>
-                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 28%;">شرح و شناسه سند</th>
+                    <th style="padding: 6px; border-bottom: 1px solid #cbd5e1; width: 23%;">شرح و شناسه سند</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${custTxs.map(tx => `
                     <tr>
-                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0;">${tx.date} ${tx.time ? `<br/><span style="color:#64748b; font-size: 9px;">${tx.time}</span>` : ''}</td>
+                      <td style="padding: 6px; border-bottom: 1px solid #e2e8f0;">
+                        <strong style="color: #b45309; display: block; font-size: 10px;">${getPersianDayOfWeek(tx.date)}</strong>
+                        <span>${tx.date}</span>
+                        ${tx.time ? `<br/><span style="color:#64748b; font-size: 9px;">ساعت ${tx.time}</span>` : ''}
+                      </td>
                       <td style="padding: 6px; border-bottom: 1px solid #e2e8f0; font-weight: 700;">
                         ${tx.type === 'buy' ? 'خرید لوله مسی' :
                           tx.type === 'sell' ? 'فروش لوله مسی' :
@@ -2085,14 +2176,42 @@ export default function App() {
   
   const myTotalAssets = activeProfile ? activeProfile.walletCash + (activeProfile.copperBalance * buyCopperPrice) : 0;
   
-  // Filtered transactions for the active client
-  const myTransactions = transactions.filter(t => t.customerId === myCustomerId).filter(t => {
-    if (txSubFilter === 'all') return true;
-    if (txSubFilter === 'checks') {
-      return Boolean(t.checkNumber) || t.type === 'check_register' || t.status === 'pending';
-    }
-    return t.type === txSubFilter;
-  });
+  // Filtered & Sorted transactions (for individual customer or all transactions)
+  const myTransactions = transactions
+    .filter(t => (myCustomerId ? t.customerId === myCustomerId : true))
+    .filter(t => {
+      if (txSubFilter === 'all') return true;
+      if (txSubFilter === 'checks') {
+        return Boolean(t.checkNumber) || t.type === 'check_register' || t.status === 'pending';
+      }
+      return t.type === txSubFilter;
+    })
+    .filter(t => {
+      if (!txSearchQuery) return true;
+      const q = txSearchQuery.trim().toLowerCase();
+      const dayName = getPersianDayOfWeek(t.date);
+      return (
+        (t.customerName || '').toLowerCase().includes(q) ||
+        (t.date || '').includes(q) ||
+        dayName.includes(q) ||
+        (t.description || '').toLowerCase().includes(q) ||
+        (t.checkNumber || '').includes(q) ||
+        (t.totalAmount || 0).toString().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      if (txSortOrder === 'date_asc') {
+        return a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '');
+      }
+      if (txSortOrder === 'amount_desc') {
+        return (b.totalAmount || 0) - (a.totalAmount || 0);
+      }
+      if (txSortOrder === 'amount_asc') {
+        return (a.totalAmount || 0) - (b.totalAmount || 0);
+      }
+      // Default: date_desc
+      return b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || '');
+    });
 
   // Render Login state if not logged in
   if (!currentUser) {
@@ -2104,9 +2223,7 @@ export default function App() {
 
         <div className="sm:mx-auto sm:w-full sm:max-w-md z-10 text-center">
           <div className="flex justify-center items-center gap-3 mb-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-500 flex items-center justify-center text-white font-black text-2xl shadow-xl shadow-amber-600/20 border border-amber-400/30">
-              و
-            </div>
+            <WattehLogo size={56} className="shadow-2xl shadow-blue-600/30 rounded-2xl" showBg={true} />
             <div className="text-right">
               <h1 className="text-3xl font-black text-white tracking-tight">واته</h1>
               <p className="text-xs text-amber-300/80 font-bold">سامانه جامع معاملات لوله مسی و کاتد</p>
@@ -2269,9 +2386,7 @@ export default function App() {
       <header className="sticky top-0 bg-white border-b border-slate-200 z-30 shadow-sm px-3 md:px-6 py-2 flex items-center justify-between gap-2 md:gap-4">
         {/* Vateh Logo */}
         <div className="flex items-center gap-1.5 shrink-0">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-600 to-amber-500 flex items-center justify-center text-white font-black text-sm shadow-sm">
-            و
-          </div>
+          <WattehLogo size={28} showBg={true} className="rounded-md" />
           <span className="text-xs md:text-sm font-black text-slate-900">واته</span>
         </div>
 
@@ -2492,199 +2607,396 @@ export default function App() {
             <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm">
               <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
                 
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-slate-950 text-sm">دفتر حساب و کیف پول لوله مسی افراد</h3>
-                  <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded font-bold">{customers.length} نفر</span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="relative">
-                    <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
-                      <Search className="w-3.5 h-3.5" />
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="جستجوی نام، تلفن..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pr-8 pl-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none w-56 font-sans text-xs"
-                    />
-                  </div>
-
-                  <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-black border">
-                    <button
-                      onClick={() => setClientFilterType('all')}
-                      className={`px-3 py-1.5 rounded-md transition-all ${clientFilterType === 'all' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
-                    >
-                      همه
-                    </button>
-                    <button
-                      onClick={() => setClientFilterType('copper')}
-                      className={`px-3 py-1.5 rounded-md transition-all ${clientFilterType === 'copper' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
-                    >
-                      دارای مس (۳)
-                    </button>
-                    <button
-                      onClick={() => setClientFilterType('cash')}
-                      className={`px-3 py-1.5 rounded-md transition-all ${clientFilterType === 'cash' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
-                    >
-                      دارای ریال (۲)
-                    </button>
-                  </div>
-
+                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1 font-bold">
                   <button
-                    onClick={() => setActiveModal('add_customer')}
-                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer"
+                    type="button"
+                    onClick={() => setAdminMainTab('customers')}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${adminMainTab === 'customers' ? 'bg-white text-slate-950 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-800'}`}
                   >
-                    <span>افزودن حساب کاربری</span>
+                    <User className="w-3.5 h-3.5 text-amber-600" />
+                    <span>دفتر حساب مشتریان ({customers.length})</span>
                   </button>
-
                   <button
-                    onClick={() => setActiveModal('factory_reset')}
-                    className="bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 hover:border-rose-200 px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 text-[11px] cursor-pointer"
-                    title="بازنشانی کل اطلاعات به حالت اولیه کارخانه"
+                    type="button"
+                    onClick={() => setAdminMainTab('all_transactions')}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${adminMainTab === 'all_transactions' ? 'bg-white text-slate-950 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-800'}`}
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>ریست کارخانه</span>
+                    <FileText className="w-3.5 h-3.5 text-blue-600" />
+                    <span>کل تراکنش‌های سیستم ({transactions.length})</span>
                   </button>
                 </div>
+
+                {adminMainTab === 'customers' && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative">
+                      <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+                        <Search className="w-3.5 h-3.5" />
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="جستجوی نام، تلفن..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pr-8 pl-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none w-56 font-sans text-xs"
+                      />
+                    </div>
+
+                    <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-black border">
+                      <button
+                        onClick={() => setClientFilterType('all')}
+                        className={`px-3 py-1.5 rounded-md transition-all ${clientFilterType === 'all' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                      >
+                        همه
+                      </button>
+                      <button
+                        onClick={() => setClientFilterType('copper')}
+                        className={`px-3 py-1.5 rounded-md transition-all ${clientFilterType === 'copper' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                      >
+                        دارای مس (۳)
+                      </button>
+                      <button
+                        onClick={() => setClientFilterType('cash')}
+                        className={`px-3 py-1.5 rounded-md transition-all ${clientFilterType === 'cash' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                      >
+                        دارای ریال (۲)
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => setActiveModal('add_customer')}
+                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>افزودن حساب کاربری</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveModal('factory_reset')}
+                      className="bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 hover:border-rose-200 px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 text-[11px] cursor-pointer"
+                      title="بازنشانی کل اطلاعات به حالت اولیه کارخانه"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>ریست کارخانه</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-500 font-bold uppercase text-[11px]">
-                      <th className="py-3.5 px-5 font-semibold">نام شخص</th>
-                      <th className="py-3.5 px-4 font-semibold text-center">درصد سهم (بورس)</th>
-                      <th className="py-3.5 px-4 font-semibold">موجودی ریالی (تومان)</th>
-                      <th className="py-3.5 px-4 font-semibold text-amber-900 bg-amber-50/50">اسناد در راه (چک صیاد)</th>
-                      <th className="py-3.5 px-4 font-semibold">موجودی لوله مسی (کیلوگرم)</th>
-                      <th className="py-3.5 px-4 font-semibold">ارزش روز لوله مسی (تومان)</th>
-                      <th className="py-3.5 px-4 font-semibold">مجموع دارایی (تومان)</th>
-                      <th className="py-3.5 px-4 font-semibold">سود واقعی</th>
-                      <th className="py-3.5 px-5 font-semibold text-left">عملیات کیف پول و معاملات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredCustomers.map(cust => {
-                      const copValue = cust.copperBalance * buyCopperPrice;
-                      const totAsset = cust.walletCash + copValue;
+              {adminMainTab === 'customers' ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-500 font-bold uppercase text-[11px]">
+                        <th className="py-3.5 px-5 font-semibold">نام شخص</th>
+                        <th className="py-3.5 px-4 font-semibold text-center">درصد سهم (بورس)</th>
+                        <th className="py-3.5 px-4 font-semibold">موجودی ریالی (تومان)</th>
+                        <th className="py-3.5 px-4 font-semibold text-amber-900 bg-amber-50/50">اسناد در راه (چک صیاد)</th>
+                        <th className="py-3.5 px-4 font-semibold">موجودی لوله مسی (کیلوگرم)</th>
+                        <th className="py-3.5 px-4 font-semibold">ارزش روز لوله مسی (تومان)</th>
+                        <th className="py-3.5 px-4 font-semibold">مجموع دارایی (تومان)</th>
+                        <th className="py-3.5 px-4 font-semibold">سود واقعی</th>
+                        <th className="py-3.5 px-5 font-semibold text-left">عملیات کیف پول و معاملات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredCustomers.map(cust => {
+                        const copValue = cust.copperBalance * buyCopperPrice;
+                        const totAsset = cust.walletCash + copValue;
 
-                      return (
-                        <tr 
-                          key={cust.id} 
-                          onClick={() => setAdminSelectedCustomerId(cust.id)}
-                          className="hover:bg-slate-50 transition cursor-pointer"
-                        >
-                          
-                          <td className="py-4 px-5">
-                            <span className="font-extrabold text-slate-950 block">{cust.name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono block mt-0.5">{cust.mobile}</span>
+                        return (
+                          <tr 
+                            key={cust.id} 
+                            onClick={() => setAdminSelectedCustomerId(cust.id)}
+                            className="hover:bg-slate-50 transition cursor-pointer"
+                          >
+                            <td className="py-4 px-5">
+                              <span className="font-extrabold text-slate-950 block">{cust.name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono block mt-0.5">{cust.mobile}</span>
+                            </td>
+
+                            <td className="py-4 px-4 text-center">
+                              <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200/50 rounded-lg text-amber-800 font-black font-mono">
+                                <span>{cust.sharePercentage.toFixed(1)}٪</span>
+                              </div>
+                            </td>
+
+                            <td className="py-4 px-4 font-bold font-mono text-slate-900">
+                              {formatNumber(cust.walletCash)}
+                            </td>
+
+                            <td className="py-4 px-4 font-mono bg-amber-50/30">
+                              {cust.inTransitChecks > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCheckbookTab('pending');
+                                    setActiveModal('manage_checks');
+                                  }}
+                                  className="font-bold text-amber-950 hover:text-amber-700 text-xs bg-amber-100/80 hover:bg-amber-200/80 px-2 py-1 rounded-lg border border-amber-300 transition cursor-pointer inline-flex items-center gap-1"
+                                  title="مشاهده چک در دفتر چک‌ها"
+                                >
+                                  <CreditCard className="w-3 h-3 text-amber-800" />
+                                  <span>{formatNumber(cust.inTransitChecks)} ت</span>
+                                </button>
+                              ) : (
+                                <span className="text-slate-300">-</span>
+                              )}
+                            </td>
+
+                            <td className="py-4 px-4 font-bold font-mono text-slate-900">
+                              {formatKg(cust.copperBalance)}
+                            </td>
+
+                            <td className="py-4 px-4 font-bold font-mono text-slate-500">
+                              {formatNumber(copValue)}
+                            </td>
+
+                            <td className="py-4 px-4 font-black font-mono text-amber-800">
+                              {formatNumber(totAsset)}
+                            </td>
+
+                            <td className="py-4 px-4">
+                              <div className="flex flex-col items-start font-bold">
+                                <span className="text-emerald-600 font-mono">
+                                  {cust.realizedProfit > 0 ? '+' : ''}{formatNumber(cust.realizedProfit)}
+                                </span>
+                                {cust.profitChangePercent > 0 && (
+                                  <span className="text-[10px] text-emerald-500 mt-0.5">
+                                    {cust.profitChangePercent}%+
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="py-4 px-5 text-left">
+                              <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => openDirectBalanceModal(cust.id)}
+                                  className="bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 font-black px-3 py-2 rounded-xl transition text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
+                                  title="ویرایش و تنظیم مستقیم موجودی پول و مس این شخص"
+                                >
+                                  <Sliders className="w-3.5 h-3.5 text-amber-700" />
+                                  <span>ویرایش موجودی</span>
+                                </button>
+
+                                <button
+                                  onClick={() => setAdminSelectedCustomerId(cust.id)}
+                                  className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-extrabold px-3 py-2 rounded-xl transition text-[11px] cursor-pointer"
+                                >
+                                  مشاهده
+                                </button>
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCustomerToDelete({ id: cust.id, name: cust.name });
+                                  }}
+                                  className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition cursor-pointer"
+                                  title="حذف حساب کاربری"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredCustomers.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="py-8 text-center text-slate-400 font-medium">
+                            مشتری مورد نظر یافت نشد.
                           </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                /* Master Transactions Table View directly in main dashboard! */
+                <div className="p-4 space-y-4">
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Search box for transactions */}
+                      <div className="relative">
+                        <span className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-slate-400">
+                          <Search className="w-3.5 h-3.5" />
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="جستجو در شرح، نام، تاریخ، چک..."
+                          value={txSearchQuery}
+                          onChange={(e) => setTxSearchQuery(e.target.value)}
+                          className="pr-8 pl-2 py-1.5 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none w-56 text-xs font-sans font-bold"
+                        />
+                      </div>
 
-                          <td className="py-4 px-4 text-center">
-                            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200/50 rounded-lg text-amber-800 font-black font-mono">
-                              <span>{cust.sharePercentage.toFixed(1)}٪</span>
-                            </div>
-                          </td>
+                      {/* Sort order dropdown */}
+                      <select
+                        value={txSortOrder}
+                        onChange={(e) => setTxSortOrder(e.target.value as any)}
+                        className="py-1.5 px-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 font-extrabold text-xs focus:outline-none cursor-pointer"
+                      >
+                        <option value="date_desc">📅 مرتب‌سازی: جدیدترین تاریخ (از اخیر به قدیم)</option>
+                        <option value="date_asc">📅 مرتب‌سازی: قدیمی‌ترین تاریخ (از قدیم به اخیر)</option>
+                        <option value="amount_desc">💰 مرتب‌سازی: بیشترین مبلغ معامله</option>
+                        <option value="amount_asc">💰 مرتب‌سازی: کمترین مبلغ معامله</option>
+                      </select>
+                    </div>
 
-                          <td className="py-4 px-4 font-bold font-mono text-slate-900">
-                            {formatNumber(cust.walletCash)}
-                          </td>
+                    {/* Subfilter tabs inside table header */}
+                    <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-black border flex-wrap">
+                      <button 
+                        onClick={() => setTxSubFilter('all')}
+                        className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'all' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                      >
+                        همه تراکنش‌ها ({myTransactions.length})
+                      </button>
+                      <button 
+                        onClick={() => setTxSubFilter('checks')}
+                        className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1 ${txSubFilter === 'checks' ? 'bg-amber-500 text-slate-950 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-900'}`}
+                      >
+                        <CreditCard className="w-3 h-3" />
+                        <span>چک‌ها و اسناد درراه</span>
+                      </button>
+                      <button 
+                        onClick={() => setTxSubFilter('buy')}
+                        className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'buy' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                      >
+                        خرید مس
+                      </button>
+                      <button 
+                        onClick={() => setTxSubFilter('sell')}
+                        className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'sell' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                      >
+                        فروش مس
+                      </button>
+                      <button 
+                        onClick={() => setTxSubFilter('deposit')}
+                        className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'deposit' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                      >
+                        واریزها
+                      </button>
+                      <button 
+                        onClick={() => setTxSubFilter('withdraw')}
+                        className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'withdraw' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                      >
+                        برداشت‌ها
+                      </button>
+                    </div>
+                  </div>
 
-                          {/* In-Transit Checks column */}
-                          <td className="py-4 px-4 font-mono bg-amber-50/30">
-                            {cust.inTransitChecks > 0 ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCheckbookTab('pending');
-                                  setActiveModal('manage_checks');
-                                }}
-                                className="font-bold text-amber-950 hover:text-amber-700 text-xs bg-amber-100/80 hover:bg-amber-200/80 px-2 py-1 rounded-lg border border-amber-300 transition cursor-pointer inline-flex items-center gap-1"
-                                title="مشاهده چک در دفتر چک‌ها"
-                              >
-                                <CreditCard className="w-3 h-3 text-amber-800" />
-                                <span>{formatNumber(cust.inTransitChecks)} ت</span>
-                              </button>
-                            ) : (
-                              <span className="text-slate-300">-</span>
-                            )}
-                          </td>
-
-                          <td className="py-4 px-4 font-bold font-mono text-slate-900">
-                            {formatKg(cust.copperBalance)}
-                          </td>
-
-                          <td className="py-4 px-4 font-bold font-mono text-slate-500">
-                            {formatNumber(copValue)}
-                          </td>
-
-                          <td className="py-4 px-4 font-black font-mono text-amber-800">
-                            {formatNumber(totAsset)}
-                          </td>
-
-                          <td className="py-4 px-4">
-                            <div className="flex flex-col items-start font-bold">
-                              <span className="text-emerald-600 font-mono">
-                                {cust.realizedProfit > 0 ? '+' : ''}{formatNumber(cust.realizedProfit)}
+                  <div className="overflow-x-auto border border-slate-100 rounded-2xl shadow-inner">
+                    <table className="w-full text-right border-collapse text-xs bg-white">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold">
+                          <th className="py-3 px-4">ردیف</th>
+                          <th className="py-3 px-4">نام طرف حساب</th>
+                          <th className="py-3 px-4">روز هفته / تاریخ و زمان</th>
+                          <th className="py-3 px-4">نوع سند و شرح معامله</th>
+                          <th className="py-3 px-4">وزن (کیلوگرم)</th>
+                          <th className="py-3 px-4">نرخ واحد (تومان)</th>
+                          <th className="py-3 px-4">مبلغ کل (تومان)</th>
+                          <th className="py-3 px-4">سود / بازدهی</th>
+                          <th className="py-3 px-4">مانده ریالی بعد</th>
+                          <th className="py-3 px-4">وضعیت</th>
+                          <th className="py-3 px-4 text-left">عملیات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {myTransactions.map((tx, idx) => (
+                          <tr key={tx.id} className={`hover:bg-slate-50/50 transition ${tx.status === 'pending' ? 'bg-amber-50/30' : ''}`}>
+                            <td className="py-4 px-4 font-mono text-slate-400 font-bold">{idx + 1}</td>
+                            <td className="py-4 px-4 font-extrabold text-slate-900 bg-slate-50/40">
+                              {tx.customerName}
+                            </td>
+                            <td className="py-4 px-4 font-mono">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] font-black text-amber-950 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300">
+                                  {getPersianDayOfWeek(tx.date)}
+                                </span>
+                                <span className="text-xs font-black text-slate-900">{tx.date}</span>
+                              </div>
+                              <span className="block text-[9px] text-slate-400 mt-1">ساعت {tx.time || '۰۹:۰۰:۰۰'}</span>
+                            </td>
+                            <td className="py-4 px-4">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-extrabold text-slate-950 block">
+                                  {tx.type === 'buy' && '• خرید لوله مسی'}
+                                  {tx.type === 'sell' && (tx.checkNumber ? '💳 فروش با دریافت چک' : '• فروش لوله مسی')}
+                                  {tx.type === 'check_register' && '• ثبت چک تضمین'}
+                                  {tx.type === 'adjustment' && '• سند اصلاح حساب'}
+                                  {tx.type === 'deposit' && '• شارژ نقدی حساب'}
+                                  {tx.type === 'withdraw' && '• برداشت وجه'}
+                                </span>
+                                {tx.checkNumber && (
+                                  <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded border border-amber-300">
+                                    صیاد: {tx.checkNumber}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-500 block max-w-xs truncate mt-0.5" title={tx.description}>
+                                {tx.description}
                               </span>
-                              {cust.profitChangePercent > 0 && (
-                                <span className="text-[10px] text-emerald-500 mt-0.5">
-                                  {cust.profitChangePercent}%+
+                            </td>
+                            <td className="py-4 px-4 font-bold font-mono text-slate-900">
+                              {tx.amountKg ? `${formatKg(tx.amountKg)} ک‌گ` : '-'}
+                            </td>
+                            <td className="py-4 px-4 font-bold font-mono text-slate-500">
+                              {tx.ratePerKg ? `${formatNumber(tx.ratePerKg)} تومان` : '-'}
+                            </td>
+                            <td className="py-4 px-4 font-black font-mono text-slate-950">
+                              {formatNumber(tx.totalAmount)}
+                            </td>
+                            <td className="py-4 px-4 font-bold font-mono">
+                              {tx.profitVal ? (
+                                <span className="text-emerald-600 block">+{formatNumber(tx.profitVal)} ت</span>
+                              ) : '-'}
+                            </td>
+                            <td className="py-4 px-4 font-bold font-mono text-slate-800">
+                              {tx.afterWalletCash !== undefined ? `${formatNumber(tx.afterWalletCash)}` : '-'}
+                            </td>
+                            <td className="py-4 px-4">
+                              {tx.status === 'pending' ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-1 rounded-lg border border-amber-300 whitespace-nowrap">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping"></span>
+                                  <span>در انتظار وصول چک</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-100 whitespace-nowrap">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>{tx.checkNumber ? 'چک وصول' : 'تأیید نهایی'}</span>
                                 </span>
                               )}
-                            </div>
-                          </td>
-
-                          <td className="py-4 px-5 text-left">
-                            <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={() => openDirectBalanceModal(cust.id)}
-                                className="bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 font-black px-3 py-2 rounded-xl transition text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
-                                title="ویرایش و تنظیم مستقیم موجودی پول و مس این شخص"
-                              >
-                                <Sliders className="w-3.5 h-3.5 text-amber-700" />
-                                <span>ویرایش موجودی</span>
-                              </button>
-
-                              <button
-                                onClick={() => setAdminSelectedCustomerId(cust.id)}
-                                className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-extrabold px-3 py-2 rounded-xl transition text-[11px] cursor-pointer"
-                              >
-                                مشاهده
-                              </button>
-
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCustomerToDelete({ id: cust.id, name: cust.name });
-                                }}
-                                className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition cursor-pointer"
-                                title="حذف حساب کاربری"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                              </button>
-                            </div>
-                          </td>
-
-                        </tr>
-                      );
-                    })}
-                    {filteredCustomers.length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="py-8 text-center text-slate-400 font-medium">
-                          مشتری مورد نظر یافت نشد.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                            </td>
+                            <td className="py-4 px-4 text-left">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    setSelectedTx(tx);
+                                    setActiveModal('receipt');
+                                  }}
+                                  className="text-amber-700 hover:text-white hover:bg-amber-600 border border-amber-600/30 px-2.5 py-1 rounded-lg transition font-bold text-[10px] cursor-pointer"
+                                >
+                                  فاکتور چاپی
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {myTransactions.length === 0 && (
+                          <tr>
+                            <td colSpan={11} className="py-8 text-center text-slate-400 font-medium">
+                              هیچ سند تراکنشی یافت نشد.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
-
           </div>
         )}
 
@@ -2874,56 +3186,86 @@ export default function App() {
               </div>
             </div>
 
-            {/* Car-dex Table layout (Strict Image 1 Match with column naming) */}
+            {/* Car-dex Table layout */}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
               <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="font-extrabold text-slate-900 text-xs lg:text-sm">ریزگردش معاملات و فاکتورهای حساب</h3>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">اسناد صادر شده و کاردکس رسمی کالا</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">اسناد صادر شده و کاردکس رسمی کالا (مرتب‌سازی بر اساس تاریخ و روزهای هفته)</span>
                 </div>
 
-                {/* Subfilter tabs inside table header */}
-                <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-black border flex-wrap">
-                  <button 
-                    onClick={() => setTxSubFilter('all')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'all' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    همه تراکنش‌ها ({myTransactions.length})
-                  </button>
-                  <button 
-                    onClick={() => setTxSubFilter('checks')}
-                    className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1 ${txSubFilter === 'checks' ? 'bg-amber-500 text-slate-950 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    <CreditCard className="w-3 h-3" />
-                    <span>چک‌ها و اسناد درراه</span>
-                    {activeProfile.inTransitChecks > 0 && (
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                    )}
-                  </button>
-                  <button 
-                    onClick={() => setTxSubFilter('buy')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'buy' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    خرید مس
-                  </button>
-                  <button 
-                    onClick={() => setTxSubFilter('sell')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'sell' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    فروش مس
-                  </button>
-                  <button 
-                    onClick={() => setTxSubFilter('deposit')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'deposit' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    واریزها
-                  </button>
-                  <button 
-                    onClick={() => setTxSubFilter('withdraw')}
-                    className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'withdraw' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    برداشت‌ها
-                  </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Search box for transactions */}
+                  <div className="relative">
+                    <span className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-slate-400">
+                      <Search className="w-3.5 h-3.5" />
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="جستجو در شرح، تاریخ، چک..."
+                      value={txSearchQuery}
+                      onChange={(e) => setTxSearchQuery(e.target.value)}
+                      className="pr-8 pl-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none w-44 text-[11px] font-sans"
+                    />
+                  </div>
+
+                  {/* Sort order dropdown */}
+                  <div className="relative">
+                    <select
+                      value={txSortOrder}
+                      onChange={(e) => setTxSortOrder(e.target.value as any)}
+                      className="py-1.5 px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-extrabold text-[11px] focus:outline-none cursor-pointer"
+                    >
+                      <option value="date_desc">📅 مرتب‌سازی: جدیدترین تاریخ (از اخیر به قدیم)</option>
+                      <option value="date_asc">📅 مرتب‌سازی: قدیمی‌ترین تاریخ (از قدیم به اخیر)</option>
+                      <option value="amount_desc">💰 مرتب‌سازی: بیشترین مبلغ معامله</option>
+                      <option value="amount_asc">💰 مرتب‌سازی: کمترین مبلغ معامله</option>
+                    </select>
+                  </div>
+
+                  {/* Subfilter tabs inside table header */}
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-black border flex-wrap">
+                    <button 
+                      onClick={() => setTxSubFilter('all')}
+                      className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'all' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                    >
+                      همه تراکنش‌ها ({myTransactions.length})
+                    </button>
+                    <button 
+                      onClick={() => setTxSubFilter('checks')}
+                      className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1 ${txSubFilter === 'checks' ? 'bg-amber-500 text-slate-950 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-900'}`}
+                    >
+                      <CreditCard className="w-3 h-3" />
+                      <span>چک‌ها و اسناد درراه</span>
+                      {activeProfile && activeProfile.inTransitChecks > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                      )}
+                    </button>
+                    <button 
+                      onClick={() => setTxSubFilter('buy')}
+                      className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'buy' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                    >
+                      خرید مس
+                    </button>
+                    <button 
+                      onClick={() => setTxSubFilter('sell')}
+                      className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'sell' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                    >
+                      فروش مس
+                    </button>
+                    <button 
+                      onClick={() => setTxSubFilter('deposit')}
+                      className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'deposit' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                    >
+                      واریزها
+                    </button>
+                    <button 
+                      onClick={() => setTxSubFilter('withdraw')}
+                      className={`px-3 py-1.5 rounded-md transition-all ${txSubFilter === 'withdraw' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                    >
+                      برداشت‌ها
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -2932,7 +3274,8 @@ export default function App() {
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold">
                       <th className="py-3 px-4">ردیف</th>
-                      <th className="py-3 px-4">تاریخ و زمان</th>
+                      {!myCustomerId && <th className="py-3 px-4">طرف حساب</th>}
+                      <th className="py-3 px-4">روز هفته / تاریخ و زمان</th>
                       <th className="py-3 px-4">نوع سند و شرح معامله</th>
                       <th className="py-3 px-4">وزن (کیلوگرم)</th>
                       <th className="py-3 px-4">نرخ واحد (تومان)</th>
@@ -2947,9 +3290,19 @@ export default function App() {
                     {myTransactions.map((tx, idx) => (
                       <tr key={tx.id} className={`hover:bg-slate-50/50 transition ${tx.status === 'pending' ? 'bg-amber-50/30' : ''}`}>
                         <td className="py-4 px-4 font-mono text-slate-400 font-bold">{idx + 1}</td>
+                        {!myCustomerId && (
+                          <td className="py-4 px-4 font-bold text-slate-900">
+                            {tx.customerName}
+                          </td>
+                        )}
                         <td className="py-4 px-4 font-mono">
-                          <span className="block text-slate-900">{tx.date}</span>
-                          <span className="block text-[9px] text-slate-400 mt-0.5">{tx.time || '۰۹:۰۰:۳۶'}</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-black text-amber-950 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300">
+                              {getPersianDayOfWeek(tx.date)}
+                            </span>
+                            <span className="text-xs font-black text-slate-900">{tx.date}</span>
+                          </div>
+                          <span className="block text-[9px] text-slate-400 mt-1">ساعت {tx.time || '۰۹:۰۰:۰۰'}</span>
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -4993,14 +5346,24 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="pt-1">
+                <div className="pt-1 space-y-2">
                   <button
                     type="button"
                     onClick={() => setActiveModal('pdf_backup')}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs shadow-sm cursor-pointer"
                   >
                     <FileText className="w-4 h-4 text-blue-200" />
-                    <span>تولید و دانلود فایل PDF بک‌آپ هفتگی</span>
+                    <span>تولید و دانلود فایل PDF بک‌آپ هفتگی (همه اسناد)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isResetting}
+                    onClick={handleLoadOfficialPdfBackupData}
+                    className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-black py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs shadow-sm cursor-pointer"
+                  >
+                    <Database className="w-4 h-4 text-emerald-200" />
+                    <span>بارگذاری کامل بک‌آپ دفتری (۴ حساب، ۳۰ سند شهریور ۱۴۰۵) و سینک به دیتابیس</span>
                   </button>
                 </div>
               </div>
@@ -5455,6 +5818,16 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={isResetting}
+                    onClick={handleLoadOfficialPdfBackupData}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 text-xs shadow cursor-pointer disabled:opacity-50"
+                  >
+                    <Database className={`w-3.5 h-3.5 text-amber-200 ${isResetting ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">{isResetting ? 'در حال سینک...' : 'سینک کامل به دیتابیس'}</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={handleOpenPdfPrintWindow}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl transition flex items-center gap-2 text-xs shadow cursor-pointer"
                   >
@@ -5650,7 +6023,7 @@ export default function App() {
                         <table className="w-full text-right text-[11px]">
                           <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                             <tr>
-                              <th className="p-2">تاریخ / زمان</th>
+                              <th className="p-2">روز هفته / تاریخ و زمان</th>
                               <th className="p-2">نوع معامله</th>
                               <th className="p-2 text-center">وزن مس (kg)</th>
                               <th className="p-2 text-center">مبلغ کل (تومان)</th>
@@ -5662,8 +6035,9 @@ export default function App() {
                             {custTxs.map((tx) => (
                               <tr key={tx.id} className="hover:bg-slate-50">
                                 <td className="p-2 font-mono text-slate-700">
-                                  {tx.date}
-                                  {tx.time && <span className="text-[10px] text-slate-400 block">{tx.time}</span>}
+                                  <span className="font-bold text-amber-800 text-[10px] block">{getPersianDayOfWeek(tx.date)}</span>
+                                  <span>{tx.date}</span>
+                                  {tx.time && <span className="text-[10px] text-slate-400 block">ساعت {tx.time}</span>}
                                 </td>
                                 <td className="p-2 font-black text-slate-900">
                                   {tx.type === 'buy' && 'خرید لوله مسی'}

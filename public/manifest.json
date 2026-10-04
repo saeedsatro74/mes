@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "واته - سامانه معاملات مس",
+  "short_name": "واته",
+  "description": "سامانه هوشمند خرید و فروش مس کاتد و مدیریت حساب‌های معاملاتی مشتریان",
+  "theme_color": "#0B72E7",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
