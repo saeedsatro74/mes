@@ -545,11 +545,17 @@ export default function App() {
   }, [transactions]);
 
   // Sync settings to Supabase
+  const isInitialSettingsSync = useRef(true);
   useEffect(() => {
     localStorage.setItem('vateh_buy_price_v5', buyCopperPrice.toString());
     localStorage.setItem('vateh_sell_price_v5', sellCopperPrice.toString());
     localStorage.setItem('vateh_company_warehouse_copper_v5', companyWarehouseCopper.toString());
     localStorage.setItem('vateh_admin_password_v5', adminPassword);
+
+    if (isInitialSettingsSync.current) {
+      isInitialSettingsSync.current = false;
+      return;
+    }
 
     supabase.from('company_settings').upsert({
       id: 1,
