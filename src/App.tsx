@@ -330,6 +330,11 @@ export default function App() {
   const [customerToDelete, setCustomerToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
 
+  // State for deleting transaction confirmation
+  const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
+  const [isDeletingTx, setIsDeletingTx] = useState(false);
+  const [revertTxBalance, setRevertTxBalance] = useState(true);
+
   // State for factory reset & zeroing
   const [isResetting, setIsResetting] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState('');
@@ -1552,6 +1557,116 @@ export default function App() {
     } finally {
       setIsDeletingCustomer(false);
       setCustomerToDelete(null);
+    }
+  };
+
+  // Confirm Delete Transaction with Supabase, LocalStorage and balance rollback
+  const confirmDeleteTransaction = async () => {
+    if (!txToDelete) return;
+    setIsDeletingTx(true);
+
+    try {
+      const tx = txToDelete;
+
+      // 1. Direct Supabase delete
+      const { error: dbDeleteErr } = await supabase.from('transactions').delete().eq('id', tx.id);
+      if (dbDeleteErr) {
+        console.warn('Supabase transaction delete warning:', dbDeleteErr);
+      }
+
+      // 2. Revert balances if requested
+      let updatedCustomers = [...customers];
+      if (revertTxBalance) {
+        const client = customers.find(c => c.id === tx.customerId);
+        if (client) {
+          let newWalletCash = client.walletCash;
+          let newCopperBalance = client.copperBalance;
+          let newInTransitChecks = client.inTransitChecks;
+          let newBlockedCopper = client.blockedCopper;
+          let newRealizedProfit = client.realizedProfit;
+
+          if (tx.type === 'buy') {
+            const kg = tx.amountKg || 0;
+            newCopperBalance = Math.max(0, newCopperBalance - kg);
+            newWalletCash = newWalletCash + (tx.totalAmount || 0);
+            setCompanyWarehouseCopper(prev => prev + kg);
+          } else if (tx.type === 'sell') {
+            const kg = tx.amountKg || 0;
+            newCopperBalance = newCopperBalance + kg;
+            if (tx.status === 'pending') {
+              newInTransitChecks = Math.max(0, newInTransitChecks - (tx.totalAmount || 0));
+              newBlockedCopper = Math.max(0, newBlockedCopper - 1);
+            } else {
+              newWalletCash = Math.max(0, newWalletCash - (tx.totalAmount || 0));
+              if (tx.profitVal) {
+                newRealizedProfit = Math.max(0, newRealizedProfit - tx.profitVal);
+              }
+            }
+            setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
+          } else if (tx.type === 'deposit') {
+            newWalletCash = Math.max(0, newWalletCash - (tx.totalAmount || 0));
+          } else if (tx.type === 'withdraw') {
+            newWalletCash = newWalletCash + (tx.totalAmount || 0);
+          } else if (tx.type === 'check_register') {
+            newInTransitChecks = Math.max(0, newInTransitChecks - (tx.totalAmount || 0));
+            newBlockedCopper = Math.max(0, newBlockedCopper - 1);
+          }
+
+          updatedCustomers = customers.map(c => {
+            if (c.id === client.id) {
+              return {
+                ...c,
+                walletCash: Math.round(newWalletCash),
+                copperBalance: Number(newCopperBalance.toFixed(2)),
+                inTransitChecks: Math.round(newInTransitChecks),
+                blockedCopper: newBlockedCopper,
+                realizedProfit: Math.round(newRealizedProfit)
+              };
+            }
+            return c;
+          });
+
+          // Recalculate copper pool shares
+          const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+          updatedCustomers = updatedCustomers.map(c => ({
+            ...c,
+            sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
+          }));
+
+          setCustomers(updatedCustomers);
+          localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+          await supabase.from('customers').upsert(updatedCustomers.map(mapCustomerToDb));
+        }
+      }
+
+      // 3. Remove transaction from local state and localStorage
+      const updatedTxs = transactions.filter(t => t.id !== tx.id);
+      setTransactions(updatedTxs);
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTxs));
+
+      // Close receipt modal if open with this deleted transaction
+      if (selectedTx && selectedTx.id === tx.id) {
+        setSelectedTx(null);
+        if (activeModal === 'receipt') {
+          setActiveModal(null);
+        }
+      }
+
+      setToastMessage({
+        title: 'حذف موفقیت‌آمیز تراکنش',
+        desc: `سند معامله به شماره ${tx.id.replace('tx_', '')} از سیستم و دیتابیس حذف گردید${revertTxBalance ? ' و مانده حساب و مس اصلاح شد.' : '.'}`,
+        type: 'success'
+      });
+    } catch (err) {
+      console.error('Error deleting transaction:', err);
+      setToastMessage({
+        title: 'خطا در حذف سند',
+        desc: 'متاسفانه در حذف این تراکنش خطایی رخ داد.',
+        type: 'error'
+      });
+    } finally {
+      setIsDeletingTx(false);
+      setTxToDelete(null);
     }
   };
 
@@ -2986,6 +3101,20 @@ export default function App() {
                                 >
                                   فاکتور چاپی
                                 </button>
+                                {currentUser.role === 'admin' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setTxToDelete(tx);
+                                    }}
+                                    className="text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                    title="حذف این سند تراکنش"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>حذف</span>
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -3371,6 +3500,20 @@ export default function App() {
                             >
                               فاکتور چاپی
                             </button>
+                            {currentUser.role === 'admin' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTxToDelete(tx);
+                                }}
+                                className="text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                title="حذف این سند تراکنش"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>حذف</span>
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -4508,20 +4651,31 @@ export default function App() {
               )}
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => window.print()}
-                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-2"
+                className="flex-1 min-w-[140px] bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>چاپ فاکتور رسمی</span>
               </button>
+              {currentUser.role === 'admin' && (
+                <button
+                  type="button"
+                  onClick={() => setTxToDelete(selectedTx)}
+                  className="bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold py-2.5 px-3.5 rounded-xl transition text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  title="حذف این سند تراکنش"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-600" />
+                  <span>حذف تراکنش</span>
+                </button>
+              )}
               <button
                 onClick={() => {
                   setActiveModal(null);
                   setSelectedTx(null);
                 }}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs cursor-pointer"
               >
                 بستن فاکتور
               </button>
@@ -5471,7 +5625,135 @@ export default function App() {
         </div>
       )}
 
-      {/* 14. MODAL: "دفتر مدیریت چک‌های صیادی و وصول اسناد در راه" (Manage Checks) */}
+      {/* 13.5. MODAL: "تایید حذف سند تراکنش" (Delete Transaction Confirmation) */}
+      {txToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto" dir="rtl">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 my-6">
+            
+            {/* Header */}
+            <div className="bg-rose-600 text-white p-5 flex justify-between items-center">
+              <button 
+                type="button" 
+                onClick={() => setTxToDelete(null)} 
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <h3 className="text-base font-black text-white">حذف سند تراکنش</h3>
+                  <p className="text-[11px] text-rose-100 mt-0.5">حذف دائم از کاردکس و پایگاه داده سوپابیس</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-white/20 text-white flex items-center justify-center">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 text-right">
+              <p className="text-xs text-slate-700 leading-relaxed">
+                آیا از حذف این سند تراکنش برای <strong className="text-slate-950 font-black">{txToDelete.customerName}</strong> اطمینان کامل دارید؟
+              </p>
+
+              {/* Transaction details card */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2.5 text-xs">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                  <span className="text-slate-500">نوع تراکنش:</span>
+                  <span className="font-extrabold text-slate-900">
+                    {txToDelete.type === 'buy' && 'خرید لوله مسی'}
+                    {txToDelete.type === 'sell' && (txToDelete.checkNumber ? 'فروش با چک صیادی' : 'فروش لوله مسی')}
+                    {txToDelete.type === 'deposit' && 'شارژ نقدی کیف پول'}
+                    {txToDelete.type === 'withdraw' && 'برداشت وجه ریالی'}
+                    {txToDelete.type === 'check_register' && 'ثبت چک صیادی تضمین'}
+                    {txToDelete.type === 'adjustment' && 'سند اصلاح حساب'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">تاریخ و زمان:</span>
+                  <span className="font-mono font-bold text-slate-800">
+                    {getPersianDayOfWeek(txToDelete.date)} {txToDelete.date} {txToDelete.time ? `(ساعت ${txToDelete.time})` : ''}
+                  </span>
+                </div>
+
+                {txToDelete.amountKg && txToDelete.amountKg > 0 ? (
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">وزن لوله مسی:</span>
+                    <span className="font-mono font-bold text-amber-800">
+                      {formatKg(txToDelete.amountKg)} کیلوگرم
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">مبلغ کل تراکنش:</span>
+                  <span className="font-mono font-black text-emerald-700 text-sm">
+                    {formatNumber(txToDelete.totalAmount)} تومان
+                  </span>
+                </div>
+
+                {txToDelete.checkNumber ? (
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">شناسه صیاد چک:</span>
+                    <span className="font-mono font-bold text-slate-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                      {txToDelete.checkNumber}
+                    </span>
+                  </div>
+                ) : null}
+
+                {txToDelete.description ? (
+                  <div className="pt-1 text-[11px] text-slate-500 border-t border-slate-200/60">
+                    <span className="block font-bold text-slate-700 mb-0.5">شرح سند:</span>
+                    <span>{txToDelete.description}</span>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Revert balance toggle */}
+              <label className="flex items-start gap-2.5 bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={revertTxBalance}
+                  onChange={(e) => setRevertTxBalance(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 text-amber-600 rounded focus:ring-amber-500 border-amber-300 cursor-pointer"
+                />
+                <div className="text-xs">
+                  <span className="font-black text-amber-950 block">
+                    بازگردانی خودکار موجودی‌های کیف پول و مس (لغو اثر مالی تراکنش)
+                  </span>
+                  <span className="text-[11px] text-amber-800 font-medium block mt-0.5 leading-relaxed">
+                    با فعال بودن این گزینه، اثر مالی این معامله روی مانده کیف پول و موجودی لوله مسی مشتری خنثی شده و به وضعیت قبل از ثبت این تراکنش بازمی‌گردد.
+                  </span>
+                </div>
+              </label>
+
+              <p className="text-[11px] text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-200 font-bold">
+                ⚠️ این عملیات، ردیف سند را مستقیماً از جدول تراکنش‌های دیتابیس آنلاین (Supabase) حذف می‌نماید.
+              </p>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  disabled={isDeletingTx}
+                  onClick={confirmDeleteTransaction}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black py-3 px-4 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeletingTx ? 'در حال حذف از دیتابیس...' : 'بله، حذف قطعی تراکنش'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTxToDelete(null)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-5 rounded-xl transition text-xs cursor-pointer"
+                >
+                  انصراف
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {activeModal === 'manage_checks' && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto" dir="rtl">
           <div className="bg-white rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-slate-100 my-6 animate-in fade-in zoom-in-95 duration-150">
@@ -5609,14 +5891,27 @@ export default function App() {
                                     <span>با زدن تیک، مبلغ بلافاصله به کیف پول مشتری واریز می‌شود:</span>
                                   </div>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => setCheckToPass(check)}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap"
-                                  >
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-200" />
-                                    <span>تیک پاس شدن چک (وصول فوری)</span>
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    {currentUser.role === 'admin' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setTxToDelete(check)}
+                                        className="bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                                        title="حذف این سند چک"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                        <span>حذف چک</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setCheckToPass(check)}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                                      <span>تیک پاس شدن چک (وصول فوری)</span>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -5645,14 +5940,26 @@ export default function App() {
                                 <span className="text-[10px] text-slate-500 block">{check.description}</span>
                               </div>
 
-                              <div className="text-left font-mono">
-                                <span className="font-black text-emerald-700 text-sm block">
-                                  {formatNumber(check.totalAmount)} ت
-                                </span>
-                                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5">
-                                  <Check className="w-3 h-3" />
-                                  <span>وصول و واریز شد</span>
-                                </span>
+                              <div className="flex items-center gap-3">
+                                <div className="text-left font-mono">
+                                  <span className="font-black text-emerald-700 text-sm block">
+                                    {formatNumber(check.totalAmount)} ت
+                                  </span>
+                                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5">
+                                    <Check className="w-3 h-3" />
+                                    <span>وصول و واریز شد</span>
+                                  </span>
+                                </div>
+                                {currentUser.role === 'admin' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setTxToDelete(check)}
+                                    className="text-rose-500 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 p-2 rounded-xl transition cursor-pointer"
+                                    title="حذف این سند چک"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           ))
