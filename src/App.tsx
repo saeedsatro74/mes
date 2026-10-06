@@ -298,6 +298,7 @@ export default function App() {
   const [withdrawDesc, setWithdrawDesc] = useState('');
 
   // 5. Check register
+  const [checkCustomerId, setCheckCustomerId] = useState('');
   const [checkAmount, setCheckAmount] = useState('');
   const [checkNum, setCheckNum] = useState('');
   const [checkDesc, setCheckDesc] = useState('');
@@ -311,8 +312,8 @@ export default function App() {
   const [companyStockInput, setCompanyStockInput] = useState('2000');
 
   // Market Price Settings State (Image 3 Mapping)
-  const [tempBuyPrice, setTempBuyPrice] = useState(buyCopperPrice);
-  const [tempSellPrice, setTempSellPrice] = useState(sellCopperPrice);
+  const [tempBuyPriceInput, setTempBuyPriceInput] = useState('');
+  const [tempSellPriceInput, setTempSellPriceInput] = useState('');
 
   // 6. Adjust account/inventory (Image 1 replica)
   const [adjustCustomerId, setAdjustCustomerId] = useState('');
@@ -773,6 +774,7 @@ export default function App() {
       setWithdrawAmount('');
       setWithdrawDesc('');
     } else if (type === 'check') {
+      setCheckCustomerId(defaultCustId);
       setCheckAmount('');
       setCheckNum('');
       setCheckDesc('ثبت چک صیادی مسدود لوله مسی');
@@ -1289,14 +1291,20 @@ export default function App() {
   // REGISTER CHECK transaction
   const submitRegisterCheck = (e: React.FormEvent) => {
     e.preventDefault();
-    const client = customers.find(c => c.id === adminSelectedCustomerId);
-    if (!client) return;
+    const targetId = checkCustomerId || adminSelectedCustomerId || customers[0]?.id;
+    const client = customers.find(c => c.id === targetId) || customers[0];
+    if (!client) {
+      alert('لطفاً حساب مشتری طرف حساب را انتخاب کنید.');
+      return;
+    }
 
-    const amountVal = parseFloat(toEnglishDigits(checkAmount.replace(/,/g, '')));
-    if (isNaN(amountVal) || amountVal <= 0) {
+    const amountVal = parseCleanNumber(checkAmount);
+    if (amountVal <= 0) {
       alert('لطفاً مبلغ معتبر برای چک صیادی وارد کنید.');
       return;
     }
+
+    const cleanCheckNumber = checkNum.trim() || 'ثبت نشده';
 
     const updated = customers.map(c => {
       if (c.id === client.id) {
@@ -1318,8 +1326,8 @@ export default function App() {
       time: new Date().toLocaleTimeString('fa-IR'),
       totalAmount: amountVal,
       status: 'pending',
-      description: checkDesc || 'سند اسناد درراه - ۱ چک مسدود لوله مسی',
-      checkNumber: checkNum || 'ثبت نشده',
+      description: checkDesc.trim() || `سند اسناد درراه - چک صیادی ${cleanCheckNumber}`,
+      checkNumber: cleanCheckNumber,
       afterWalletCash: client.walletCash
     };
 
@@ -1330,6 +1338,9 @@ export default function App() {
     setCustomers(updated);
     setTransactions(nextTxs);
     setActiveModal(null);
+    setCheckAmount('');
+    setCheckNum('');
+    setCheckDesc('');
 
     // Immediate Supabase sync
     supabase.from('customers').upsert(updated.map(mapCustomerToDb)).then();
@@ -1337,7 +1348,7 @@ export default function App() {
 
     setToastMessage({
       title: 'ثبت چک صیادی در اسناد درراه',
-      desc: `چک صیادی به شماره ${checkNum || ''} به مبلغ ${formatNumber(amountVal)} تومان ثبت گردید. وجه در «اسناد درراه» قرار گرفت و تا زمان وصول، موجودی نقدی اضافه نمی‌شود.`,
+      desc: `چک صیادی به شماره ${cleanCheckNumber} به مبلغ ${formatNumber(amountVal)} تومان برای ${client.name} ثبت گردید. وجه در «اسناد درراه» قرار گرفت و تا زمان وصول، موجودی نقدی اضافه نمی‌شود.`,
       type: 'info'
     });
   };
@@ -2235,9 +2246,20 @@ export default function App() {
   // Save reference rates (Image 3 implementation)
   const saveMarketPriceSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    setBuyCopperPrice(tempBuyPrice);
-    setSellCopperPrice(tempSellPrice);
+    const buyVal = parseCleanNumber(tempBuyPriceInput);
+    const sellVal = parseCleanNumber(tempSellPriceInput);
+    if (buyVal <= 0 || sellVal <= 0) {
+      alert('لطفاً نرخ معتبر برای قیمت خرید و فروش لوله مسی وارد نمایید.');
+      return;
+    }
+    setBuyCopperPrice(buyVal);
+    setSellCopperPrice(sellVal);
     setActiveModal(null);
+    setToastMessage({
+      title: 'بروزرسانی نرخ مس',
+      desc: `قیمت خرید به ${formatNumber(buyVal)} تومان و فروش به ${formatNumber(sellVal)} تومان تنظیم گردید و در دیتابیس ثبت شد.`,
+      type: 'success'
+    });
   };
 
   // Add customer
@@ -2515,8 +2537,8 @@ export default function App() {
         <button
           onClick={() => {
             if (currentUser.role === 'admin') {
-              setTempBuyPrice(buyCopperPrice);
-              setTempSellPrice(sellCopperPrice);
+              setTempBuyPriceInput(buyCopperPrice > 0 ? formatNumber(buyCopperPrice) : '');
+              setTempSellPriceInput(sellCopperPrice > 0 ? formatNumber(sellCopperPrice) : '');
               setActiveModal('market_price_settings');
             }
           }}
@@ -4115,8 +4137,9 @@ export default function App() {
             </div>
 
             {(() => {
-              const selectedTarget = customers.find(c => c.id === adminSelectedCustomerId) || customers[0];
-              const checkVal = parseFloat(toEnglishDigits(checkAmount.replace(/,/g, ''))) || 0;
+              const activeTargetId = checkCustomerId || adminSelectedCustomerId || customers[0]?.id;
+              const selectedTarget = customers.find(c => c.id === activeTargetId) || customers[0];
+              const checkVal = parseCleanNumber(checkAmount);
 
               return (
                 <form onSubmit={submitRegisterCheck} className="p-5 md:p-6 space-y-4">
@@ -4128,13 +4151,13 @@ export default function App() {
                     </label>
                     <div className="relative">
                       <select
-                        value={adminSelectedCustomerId || customers[0]?.id}
-                        onChange={(e) => setAdminSelectedCustomerId(e.target.value)}
-                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 appearance-none focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        value={activeTargetId}
+                        onChange={(e) => setCheckCustomerId(e.target.value)}
+                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
                       >
                         {customers.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.name} (مس در انبار: {formatKg(c.copperBalance)} کیلوگرم)
+                            {c.name} (موجودی مس: {formatKg(c.copperBalance)} کیلوگرم | کیف پول: {formatNumber(c.walletCash)} ت)
                           </option>
                         ))}
                       </select>
@@ -4150,15 +4173,21 @@ export default function App() {
                     <div className="relative rounded-xl shadow-sm">
                       <input
                         type="text"
+                        inputMode="numeric"
+                        dir="ltr"
                         required
                         value={checkAmount}
                         onChange={(e) => {
-                          const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
-                          const num = parseFloat(raw);
-                          setCheckAmount(isNaN(num) ? '' : formatNumber(num));
+                          const raw = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                          if (!raw) {
+                            setCheckAmount('');
+                          } else {
+                            const num = parseInt(raw, 10);
+                            setCheckAmount(formatNumber(num));
+                          }
                         }}
-                        placeholder="مثال: ۵۰۰,۰۰۰,۰۰۰"
-                        className="w-full pl-14 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-mono text-center font-bold"
+                        placeholder="۵۰۰,۰۰۰,۰۰۰"
+                        className="w-full pl-14 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm font-mono text-center font-bold"
                       />
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
                         تومان
@@ -4181,11 +4210,21 @@ export default function App() {
                     <div className="relative">
                       <input
                         type="text"
+                        inputMode="numeric"
+                        dir="ltr"
                         required
                         value={checkNum}
-                        onChange={(e) => setCheckNum(e.target.value)}
-                        placeholder="مثال: ۴۲۰۴ - ۵۶۲۸ - ۱۲۹۰ - ۰۳۴۱"
-                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-mono text-center font-bold tracking-widest"
+                        onChange={(e) => {
+                          const raw = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '').slice(0, 16);
+                          if (!raw) {
+                            setCheckNum('');
+                          } else {
+                            const chunks = raw.match(/.{1,4}/g);
+                            setCheckNum(chunks ? chunks.join(' - ') : raw);
+                          }
+                        }}
+                        placeholder="۴۲۰۴ - ۵۶۲۸ - ۱۲۹۰ - ۰۳۴۱"
+                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm font-mono text-center font-bold tracking-wider"
                       />
                       <Tag className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
                     </div>
@@ -5153,122 +5192,151 @@ export default function App() {
             </div>
 
             <form onSubmit={saveMarketPriceSettings} className="p-6 space-y-6">
-              
-              {/* Box 1: BUY reference rate */}
-              <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200/50 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Database className="w-4 h-4 text-amber-700" />
-                    <span className="text-xs font-extrabold text-amber-950">قیمت مرجع خرید مس (تومان / کیلوگرم) *</span>
-                  </div>
-                  <span className="text-[9px] text-amber-700 bg-amber-100/50 px-2 py-0.5 rounded font-bold">دیفالت فرم ثبت خرید</span>
-                </div>
+              {(() => {
+                const buyVal = parseCleanNumber(tempBuyPriceInput);
+                const sellVal = parseCleanNumber(tempSellPriceInput);
+                const spreadVal = Math.abs(buyVal - sellVal);
 
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    value={formatNumber(tempBuyPrice)}
-                    onChange={(e) => {
-                      const val = parseFloat(toEnglishDigits(e.target.value.replace(/,/g, '')));
-                      setTempBuyPrice(isNaN(val) ? 0 : val);
-                    }}
-                    className="w-full p-3 bg-white border-2 border-amber-500 rounded-xl text-slate-950 text-center font-black text-sm font-mono focus:outline-none"
-                  />
-                  <span className="absolute inset-y-0 left-3 flex items-center text-xs text-slate-400">تومان/کیلو</span>
-                </div>
+                return (
+                  <>
+                    {/* Box 1: BUY reference rate */}
+                    <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200/50 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Database className="w-4 h-4 text-amber-700" />
+                          <span className="text-xs font-extrabold text-amber-950">قیمت مرجع خرید مس (تومان / کیلوگرم) *</span>
+                        </div>
+                        <span className="text-[9px] text-amber-700 bg-amber-100/50 px-2 py-0.5 rounded font-bold">دیفالت فرم ثبت خرید</span>
+                      </div>
 
-                <div className="text-[10px] text-amber-800 text-center font-bold">
-                  {numToPersianWords(tempBuyPrice)}
-                </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          dir="ltr"
+                          required
+                          value={tempBuyPriceInput}
+                          onChange={(e) => {
+                            const raw = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                            if (!raw) {
+                              setTempBuyPriceInput('');
+                            } else {
+                              const num = parseInt(raw, 10);
+                              setTempBuyPriceInput(formatNumber(num));
+                            }
+                          }}
+                          placeholder="مثال: ۳,۲۴۰,۰۰۰"
+                          className="w-full p-3 bg-white border-2 border-amber-500 rounded-xl text-slate-950 text-center font-black text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                        />
+                        <span className="absolute inset-y-0 left-3 flex items-center text-xs text-slate-400 font-bold">تومان/کیلو</span>
+                      </div>
 
-                {/* Common buying rates */}
-                <div className="space-y-1">
-                  <span className="text-[9px] text-slate-400 block font-bold">نرخ‌های رایج خرید مس:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {[2800000, 2830000, 2850000, 2900000, 3000000, 3100000, 3200000].map(p => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setTempBuyPrice(p)}
-                        className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition ${tempBuyPrice === p ? 'bg-amber-600 text-white border-amber-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
-                      >
-                        {formatNumber(p)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                      {buyVal > 0 && (
+                        <div className="text-[10px] text-amber-800 text-center font-bold">
+                          {numToPersianWords(buyVal)} تومان
+                        </div>
+                      )}
 
-              {/* Box 2: SELL reference rate */}
-              <div className="bg-emerald-50/40 p-4 rounded-2xl border border-emerald-200/40 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-emerald-700" />
-                    <span className="text-xs font-extrabold text-emerald-950">قیمت مرجع فروش مس (تومان / کیلوگرم) *</span>
-                  </div>
-                  <span className="text-[9px] text-emerald-700 bg-emerald-100/50 px-2 py-0.5 rounded font-bold">دیفالت فرم ثبت فروش</span>
-                </div>
+                      {/* Common buying rates */}
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-slate-400 block font-bold">نرخ‌های رایج خرید مس:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {[2800000, 2830000, 2850000, 2900000, 3000000, 3100000, 3200000, 3240000].map(p => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setTempBuyPriceInput(formatNumber(p))}
+                              className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition cursor-pointer ${buyVal === p ? 'bg-amber-600 text-white border-amber-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
+                            >
+                              {formatNumber(p)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
 
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    value={formatNumber(tempSellPrice)}
-                    onChange={(e) => {
-                      const val = parseFloat(toEnglishDigits(e.target.value.replace(/,/g, '')));
-                      setTempSellPrice(isNaN(val) ? 0 : val);
-                    }}
-                    className="w-full p-3 bg-white border-2 border-emerald-500 rounded-xl text-slate-950 text-center font-black text-sm font-mono focus:outline-none"
-                  />
-                  <span className="absolute inset-y-0 left-3 flex items-center text-xs text-slate-400">تومان/کیلو</span>
-                </div>
+                    {/* Box 2: SELL reference rate */}
+                    <div className="bg-emerald-50/40 p-4 rounded-2xl border border-emerald-200/40 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-emerald-700" />
+                          <span className="text-xs font-extrabold text-emerald-950">قیمت مرجع فروش مس (تومان / کیلوگرم) *</span>
+                        </div>
+                        <span className="text-[9px] text-emerald-700 bg-emerald-100/50 px-2 py-0.5 rounded font-bold">دیفالت فرم ثبت فروش</span>
+                      </div>
 
-                <div className="text-[10px] text-emerald-800 text-center font-bold">
-                  {numToPersianWords(tempSellPrice)}
-                </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          dir="ltr"
+                          required
+                          value={tempSellPriceInput}
+                          onChange={(e) => {
+                            const raw = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                            if (!raw) {
+                              setTempSellPriceInput('');
+                            } else {
+                              const num = parseInt(raw, 10);
+                              setTempSellPriceInput(formatNumber(num));
+                            }
+                          }}
+                          placeholder="مثال: ۳,۲۸۰,۰۰۰"
+                          className="w-full p-3 bg-white border-2 border-emerald-500 rounded-xl text-slate-950 text-center font-black text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                        />
+                        <span className="absolute inset-y-0 left-3 flex items-center text-xs text-slate-400 font-bold">تومان/کیلو</span>
+                      </div>
 
-                {/* Common selling rates */}
-                <div className="space-y-1">
-                  <span className="text-[9px] text-slate-400 block font-bold">نرخ‌های رایج فروش مس:</span>
-                  <div className="flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setTempSellPrice(tempBuyPrice)}
-                      className="px-2 py-1 text-[10px] font-black rounded-lg border bg-white hover:bg-slate-50 text-slate-700"
-                    >
-                      هم‌قیمت خرید
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTempSellPrice(tempBuyPrice - 150000)}
-                      className={`px-2 py-1 text-[10px] font-black rounded-lg border transition ${(tempBuyPrice - tempSellPrice === 150000) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
-                    >
-                      ۱۵۰ هزار کمتر
-                    </button>
-                    {[2850000, 3000000, 3100000, 3200000].map(p => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setTempSellPrice(p)}
-                        className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition ${tempSellPrice === p ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
-                      >
-                        {formatNumber(p)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                      {sellVal > 0 && (
+                        <div className="text-[10px] text-emerald-800 text-center font-bold">
+                          {numToPersianWords(sellVal)} تومان
+                        </div>
+                      )}
 
-              {/* Box 3: Spread calculation info */}
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex justify-between items-center text-xs text-slate-800 font-bold">
-                <span className="flex items-center gap-1.5">
-                  🔄 اختلاف نرخ خرید و فروش (اسپرد):
-                </span>
-                <span className="font-mono text-slate-950 font-black text-sm">
-                  {formatNumber(Math.abs(tempBuyPrice - tempSellPrice))} تومان
-                </span>
-              </div>
+                      {/* Common selling rates */}
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-slate-400 block font-bold">نرخ‌های رایج فروش مس:</span>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setTempSellPriceInput(tempBuyPriceInput || (buyVal > 0 ? formatNumber(buyVal) : ''))}
+                            className="px-2 py-1 text-[10px] font-black rounded-lg border bg-white hover:bg-slate-50 text-slate-700 cursor-pointer"
+                          >
+                            هم‌قیمت خرید
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTempSellPriceInput(formatNumber(Math.max(0, buyVal - 150000)))}
+                            className={`px-2 py-1 text-[10px] font-black rounded-lg border transition cursor-pointer ${(buyVal - sellVal === 150000) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
+                          >
+                            ۱۵۰ هزار کمتر
+                          </button>
+                          {[2850000, 3000000, 3100000, 3200000, 3280000].map(p => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setTempSellPriceInput(formatNumber(p))}
+                              className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition cursor-pointer ${sellVal === p ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
+                            >
+                              {formatNumber(p)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Box 3: Spread calculation info */}
+                    <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex justify-between items-center text-xs text-slate-800 font-bold">
+                      <span className="flex items-center gap-1.5">
+                        🔄 اختلاف نرخ خرید و فروش (اسپرد):
+                      </span>
+                      <span className="font-mono text-slate-950 font-black text-sm">
+                        {formatNumber(spreadVal)} تومان
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Form submit actions */}
               <div className="pt-2 flex gap-2">
