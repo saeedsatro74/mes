@@ -38,7 +38,9 @@ import {
   Wallet,
   PieChart,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { supabase, DbCustomer, DbTransaction, DbCompanySettings } from './lib/supabase';
 import { ShamsiDatePicker, toEnglishDigits, toPersianDigits, getTodayShamsi, getOffsetShamsiDate, getPersianDayOfWeek } from './components/ShamsiDatePicker';
@@ -202,6 +204,8 @@ export default function App() {
   const [loginMobile, setLoginMobile] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [adminLoginPass, setAdminLoginPass] = useState('');
+  const [showAdminPass, setShowAdminPass] = useState(false);
+  const [isAdminLoggingIn, setIsAdminLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState('');
 
   // Password change modal states
@@ -214,7 +218,20 @@ export default function App() {
   // App Core Data (Persisted to LocalStorage)
   const [customers, setCustomers] = useState<Customer[]>(() => {
     const saved = localStorage.getItem('vateh_customers_v5');
-    return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
+    if (saved) {
+      try {
+        const parsed: Customer[] = JSON.parse(saved);
+        return parsed.map(c => {
+          if (c.id === 'c2' && c.copperBalance !== 32.26) {
+            return { ...c, copperBalance: 32.26, sharePercentage: 4.06 };
+          }
+          return c;
+        });
+      } catch {
+        return INITIAL_CUSTOMERS;
+      }
+    }
+    return INITIAL_CUSTOMERS;
   });
 
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
@@ -335,6 +352,16 @@ export default function App() {
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
   const [isDeletingTx, setIsDeletingTx] = useState(false);
   const [revertTxBalance, setRevertTxBalance] = useState(true);
+
+  // State for editing / correcting transaction & weight
+  const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
+  const [editWeightInput, setEditWeightInput] = useState('');
+  const [editRateInput, setEditRateInput] = useState('');
+  const [editTotalInput, setEditTotalInput] = useState('');
+  const [editDescInput, setEditDescInput] = useState('');
+  const [editDateInput, setEditDateInput] = useState('');
+  const [isEditingTx, setIsEditingTx] = useState(false);
+  const [editError, setEditError] = useState('');
 
   // State for factory reset & zeroing
   const [isResetting, setIsResetting] = useState(false);
@@ -581,14 +608,40 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Universal number parser handling Persian commas (٬), Arabic commas (،), standard commas, spaces etc.
-  const parseCleanNumber = (str: string | number): number => {
+  // Universal weight parser handling Persian slash (/), Persian decimal (٫), dot (.), comma
+  const parseCleanWeight = (str: string | number | null | undefined): number => {
+    if (str === null || str === undefined) return 0;
     if (typeof str === 'number') return isNaN(str) ? 0 : str;
-    if (!str) return 0;
-    const eng = toEnglishDigits(str);
-    const normalized = eng.replace(/[٫]/g, '.').replace(/[,٬،]/g, '');
+    const eng = toEnglishDigits(String(str)).trim();
+    if (!eng) return 0;
+    // Replace Persian decimal separator ٫, Arabic comma ،, and slash / with dot
+    let normalized = eng.replace(/[٫/]/g, '.');
+    // If comma is used as decimal separator e.g. "12,5"
+    if (normalized.includes(',') && !normalized.includes('.')) {
+      const parts = normalized.split(',');
+      if (parts.length === 2 && parts[1].length <= 3) {
+        normalized = parts[0] + '.' + parts[1];
+      }
+    }
+    normalized = normalized.replace(/[,٬،\s]/g, '');
     const cleaned = normalized.replace(/[^0-9.]/g, '');
-    const num = parseFloat(cleaned);
+    const dotIndex = cleaned.indexOf('.');
+    const sanitized = dotIndex === -1 ? cleaned : cleaned.substring(0, dotIndex + 1) + cleaned.substring(dotIndex + 1).replace(/\./g, '');
+    const num = parseFloat(sanitized);
+    return isNaN(num) ? 0 : Math.round(num * 1000) / 1000;
+  };
+
+  // Universal number parser handling Persian commas (٬), Arabic commas (،), standard commas, spaces etc.
+  const parseCleanNumber = (str: string | number | null | undefined): number => {
+    if (str === null || str === undefined) return 0;
+    if (typeof str === 'number') return isNaN(str) ? 0 : str;
+    const eng = toEnglishDigits(String(str)).trim();
+    if (!eng) return 0;
+    const normalized = eng.replace(/[٫/]/g, '.').replace(/[,٬،\s]/g, '');
+    const cleaned = normalized.replace(/[^0-9.]/g, '');
+    const dotIndex = cleaned.indexOf('.');
+    const sanitized = dotIndex === -1 ? cleaned : cleaned.substring(0, dotIndex + 1) + cleaned.substring(dotIndex + 1).replace(/\./g, '');
+    const num = parseFloat(sanitized);
     return isNaN(num) ? 0 : num;
   };
 
@@ -651,7 +704,7 @@ export default function App() {
   };
 
   // Admin Login action
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
@@ -661,7 +714,8 @@ export default function App() {
       return;
     }
 
-    if (pass === adminPassword) {
+    // 1. Direct match with current state
+    if (adminPassword && pass === adminPassword) {
       setCurrentUser({
         id: 'admin',
         name: 'مدیرعامل واحد بازرگانی',
@@ -669,8 +723,32 @@ export default function App() {
         role: 'admin'
       });
       setLoginError('');
-    } else {
+      return;
+    }
+
+    // 2. Live query to Supabase (in case updated directly in DB)
+    setIsAdminLoggingIn(true);
+    try {
+      const { data, error } = await supabase.from('company_settings').select('admin_password').eq('id', 1).single();
+      if (!error && data?.admin_password) {
+        setAdminPassword(data.admin_password);
+        localStorage.setItem('vateh_admin_password_v5', data.admin_password);
+        if (pass === data.admin_password) {
+          setCurrentUser({
+            id: 'admin',
+            name: 'مدیرعامل واحد بازرگانی',
+            mobile: '09120000000',
+            role: 'admin'
+          });
+          setLoginError('');
+          return;
+        }
+      }
+      setLoginError('رمز عبور مدیریت اشتباه است. لطفاً رمز صحیح را وارد کنید.');
+    } catch {
       setLoginError('رمز عبور مدیریت اشتباه است.');
+    } finally {
+      setIsAdminLoggingIn(false);
     }
   };
 
@@ -797,7 +875,7 @@ export default function App() {
       return;
     }
 
-    const kg = parseCleanNumber(buyWeight);
+    const kg = parseCleanWeight(buyWeight);
     if (kg <= 0) {
       setFormError('لطفاً وزن معتبر برای خرید مس وارد کنید.');
       return;
@@ -870,7 +948,7 @@ export default function App() {
     e.preventDefault();
     setFormError('');
 
-    const kg = parseCleanNumber(sellWeight);
+    const kg = parseCleanWeight(sellWeight);
     if (kg <= 0) {
       setFormError('لطفاً مقدار معتبر برای وزن مس وارد کنید.');
       return;
@@ -1419,7 +1497,7 @@ export default function App() {
 
     if (adjustTypeMode === 'direct') {
       const targetCash = parseCleanNumber(directCashInput);
-      const targetCopper = parseCleanNumber(directCopperInput);
+      const targetCopper = parseCleanWeight(directCopperInput);
 
       const updatedCustomers = customers.map(c => {
         if (c.id === client.id) {
@@ -1459,11 +1537,8 @@ export default function App() {
       });
     } else {
       // Relative adjustment (+ / - deltas)
-      const cleanCash = toEnglishDigits(adjustCashAmount).replace(/,/g, '');
-      const cleanCopper = toEnglishDigits(adjustCopperAmount);
-
-      const rawCash = parseFloat(cleanCash) || 0;
-      const rawCopper = parseFloat(cleanCopper) || 0;
+      const rawCash = parseCleanNumber(adjustCashAmount);
+      const rawCopper = parseCleanWeight(adjustCopperAmount);
 
       const cashAdjustVal = adjustCashMode === 'increase' ? rawCash : -rawCash;
       const copperAdjustVal = adjustCopperMode === 'increase' ? rawCopper : -rawCopper;
@@ -1678,6 +1753,129 @@ export default function App() {
     } finally {
       setIsDeletingTx(false);
       setTxToDelete(null);
+    }
+  };
+
+  // Open edit / correct transaction modal
+  const openEditTransactionModal = (tx: Transaction) => {
+    setTxToEdit(tx);
+    setEditWeightInput(tx.amountKg !== undefined && tx.amountKg !== null ? tx.amountKg.toString() : '');
+    setEditRateInput(tx.ratePerKg ? tx.ratePerKg.toLocaleString('en-US') : '');
+    setEditTotalInput(tx.totalAmount ? tx.totalAmount.toLocaleString('en-US') : '');
+    setEditDescInput(tx.description || '');
+    setEditDateInput(tx.date || getTodayShamsi());
+    setEditError('');
+  };
+
+  // Confirm Edit Transaction with Supabase, LocalStorage and balance recalculation
+  const confirmEditTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!txToEdit) return;
+    setIsEditingTx(true);
+    setEditError('');
+
+    try {
+      const origTx = txToEdit;
+      const newWeight = parseCleanWeight(editWeightInput);
+      const newRate = parseCleanNumber(editRateInput);
+      let newTotal = parseCleanNumber(editTotalInput);
+
+      if (newTotal <= 0 && newWeight > 0 && newRate > 0) {
+        newTotal = Math.round(newWeight * newRate);
+      }
+
+      if (newTotal <= 0) {
+        setEditError('لطفاً مبلغ کل معتبر وارد کنید.');
+        setIsEditingTx(false);
+        return;
+      }
+
+      const oldWeight = origTx.amountKg || 0;
+      const oldTotal = origTx.totalAmount || 0;
+      const diffWeight = newWeight - oldWeight;
+      const diffCash = newTotal - oldTotal;
+
+      // Update customer balances based on the delta
+      let updatedCustomers = [...customers];
+      const client = customers.find(c => c.id === origTx.customerId);
+      if (client) {
+        let newWalletCash = client.walletCash;
+        let newCopperBalance = client.copperBalance;
+
+        if (origTx.type === 'buy') {
+          // If bought more weight, copper increases, wallet cash decreases
+          newCopperBalance = Math.max(0, newCopperBalance + diffWeight);
+          newWalletCash = newWalletCash - diffCash;
+          setCompanyWarehouseCopper(prev => Math.max(0, prev - diffWeight));
+        } else if (origTx.type === 'sell') {
+          // If sold more weight, copper decreases, wallet cash increases
+          newCopperBalance = Math.max(0, newCopperBalance - diffWeight);
+          if (origTx.status === 'completed') {
+            newWalletCash = newWalletCash + diffCash;
+          }
+          setCompanyWarehouseCopper(prev => Math.max(0, prev + diffWeight));
+        } else if (origTx.type === 'deposit') {
+          newWalletCash = newWalletCash + diffCash;
+        } else if (origTx.type === 'withdraw') {
+          newWalletCash = newWalletCash - diffCash;
+        } else if (origTx.type === 'adjustment') {
+          newCopperBalance = Math.max(0, newCopperBalance + diffWeight);
+          newWalletCash = newWalletCash + diffCash;
+        }
+
+        updatedCustomers = customers.map(c => {
+          if (c.id === client.id) {
+            return {
+              ...c,
+              walletCash: Math.round(newWalletCash),
+              copperBalance: Number(newCopperBalance.toFixed(2))
+            };
+          }
+          return c;
+        });
+
+        // Recalculate share percentage
+        const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+        updatedCustomers = updatedCustomers.map(c => ({
+          ...c,
+          sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
+        }));
+
+        setCustomers(updatedCustomers);
+        localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+        await supabase.from('customers').upsert(updatedCustomers.map(mapCustomerToDb));
+      }
+
+      // Update the transaction object
+      const updatedTx: Transaction = {
+        ...origTx,
+        amountKg: newWeight > 0 ? newWeight : undefined,
+        ratePerKg: newRate > 0 ? newRate : undefined,
+        totalAmount: newTotal,
+        date: editDateInput || origTx.date,
+        description: editDescInput.trim() || origTx.description,
+      };
+
+      const updatedTxs = transactions.map(t => t.id === origTx.id ? updatedTx : t);
+      setTransactions(updatedTxs);
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTxs));
+      await supabase.from('transactions').upsert([mapTransactionToDb(updatedTx)]);
+
+      if (selectedTx && selectedTx.id === origTx.id) {
+        setSelectedTx(updatedTx);
+      }
+
+      setToastMessage({
+        title: 'اصلاح موفقیت‌آمیز سند',
+        desc: `سند معامله اصلاح گردید و تغییرات وزن (${formatKg(newWeight)} ک‌گ) و مبلغ در کاردکس و حساب اعمال شد.`,
+        type: 'success'
+      });
+      setTxToEdit(null);
+    } catch (err) {
+      console.error('Error editing transaction:', err);
+      setEditError('خطایی در ثبت اصلاحات رخ داد.');
+    } finally {
+      setIsEditingTx(false);
     }
   };
 
@@ -2364,38 +2562,32 @@ export default function App() {
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-amber-900/20 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="sm:mx-auto sm:w-full sm:max-w-md z-10 text-center">
-          <div className="flex justify-center items-center gap-3 mb-4">
-            <WattehLogo size={56} className="shadow-2xl shadow-blue-600/30 rounded-2xl" showBg={true} />
-            <div className="text-right">
-              <h1 className="text-3xl font-black text-white tracking-tight">واته</h1>
-              <p className="text-xs text-amber-300/80 font-bold">سامانه جامع معاملات لوله مسی و کاتد</p>
-            </div>
+        <div className="sm:mx-auto sm:w-full sm:max-w-md z-10 text-center mb-6">
+          <div className="flex justify-center items-center gap-3">
+            <WattehLogo size={52} className="shadow-2xl shadow-blue-600/30 rounded-2xl" showBg={true} />
+            <h1 className="text-3xl font-black text-white tracking-tight">واته</h1>
           </div>
-          <h2 className="mt-2 text-center text-base font-extrabold text-slate-200">
-            ورود به درگاه هوشمند معاملات
-          </h2>
         </div>
 
-        <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md z-10 px-4">
-          <div className="bg-slate-900/90 backdrop-blur-xl py-7 px-6 shadow-2xl rounded-3xl border border-slate-800 space-y-5">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md z-10 px-4">
+          <div className="bg-slate-900/95 backdrop-blur-xl py-7 px-7 shadow-2xl rounded-3xl border border-slate-800 space-y-6">
             
-            {/* Login Mode Switcher Tabs */}
-            <div className="flex bg-slate-950 p-1 rounded-2xl border border-slate-800 text-xs font-black">
+            {/* Dual Login Tabs: پنل مشتری & پنل مدیریت */}
+            <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-950 rounded-2xl border border-slate-800">
               <button
                 type="button"
                 onClick={() => {
                   setLoginTab('customer');
                   setLoginError('');
                 }}
-                className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-3 px-3 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   loginTab === 'customer'
-                    ? 'bg-amber-500 text-slate-950 shadow-md'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <User className="w-4 h-4" />
-                <span>ورود مشتریان</span>
+                <span>پنل مشتری</span>
               </button>
               <button
                 type="button"
@@ -2403,35 +2595,35 @@ export default function App() {
                   setLoginTab('admin');
                   setLoginError('');
                 }}
-                className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-3 px-3 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   loginTab === 'admin'
-                    ? 'bg-slate-800 text-amber-400 shadow-md border border-amber-500/30'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <Lock className="w-4 h-4" />
-                <span>ورود مدیریت</span>
+                <span>پنل مدیریت</span>
               </button>
             </div>
 
-            {/* Form: Customer Login */}
+            {/* TAB 1: پنل مشتری */}
             {loginTab === 'customer' && (
               <form className="space-y-4" onSubmit={handleCustomerLogin}>
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5 mr-1">
-                    شماره تلفن همراه
+                    شماره همراه
                   </label>
                   <div className="relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
-                      <User className="h-4 w-4 text-slate-500" />
+                      <User className="h-4 w-4 text-amber-500" />
                     </div>
                     <input
-                      type="text"
+                      type="tel"
                       required
                       value={loginMobile}
                       onChange={(e) => setLoginMobile(e.target.value)}
-                      placeholder="09xxxxxxxxx"
-                      className="block w-full pr-10 pl-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right font-mono text-sm"
+                      placeholder="09..."
+                      className="block w-full pr-10 pl-3 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right font-mono text-sm transition"
                     />
                   </div>
                 </div>
@@ -2442,72 +2634,89 @@ export default function App() {
                   </label>
                   <div className="relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
-                      <Lock className="h-4 w-4 text-slate-500" />
+                      <Lock className="h-4 w-4 text-amber-500" />
                     </div>
                     <input
                       type="password"
                       required
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="block w-full pr-10 pl-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right font-mono text-sm"
+                      placeholder="رمز عبور"
+                      className="block w-full pr-10 pl-3 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right font-mono text-sm transition"
                     />
                   </div>
                 </div>
 
                 {loginError && (
-                  <div className="p-3 rounded-xl bg-red-950/50 border border-red-800/40 text-red-300 text-xs flex items-center gap-2">
+                  <div className="p-3 rounded-xl bg-red-950/60 border border-red-800/50 text-red-300 text-xs flex items-center gap-2 animate-in fade-in duration-150">
                     <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                    <span>{loginError}</span>
+                    <span className="font-bold">{loginError}</span>
                   </div>
                 )}
 
-                <div className="pt-1">
+                <div className="pt-2">
                   <button
                     type="submit"
-                    className="w-full flex justify-center py-3.5 px-4 rounded-xl shadow-lg text-xs font-black text-slate-950 bg-amber-500 hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all cursor-pointer"
+                    className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow-lg text-sm font-black text-slate-950 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-yellow-400 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all cursor-pointer"
                   >
-                    ورود به پنل حساب مشتری
+                    <span>ورود</span>
                   </button>
                 </div>
               </form>
             )}
 
-            {/* Form: Admin Login */}
+            {/* TAB 2: پنل مدیریت */}
             {loginTab === 'admin' && (
               <form className="space-y-4" onSubmit={handleAdminLogin}>
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5 mr-1">
-                    رمز عبور مدیریت سیستم <span className="text-red-400">*</span>
+                    رمز عبور
                   </label>
                   <div className="relative rounded-xl shadow-sm">
                     <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
                       <Lock className="h-4 w-4 text-amber-500" />
                     </div>
                     <input
-                      type="password"
+                      type={showAdminPass ? 'text' : 'password'}
                       required
+                      autoFocus
                       value={adminLoginPass}
                       onChange={(e) => setAdminLoginPass(e.target.value)}
-                      placeholder="••••••••"
-                      className="block w-full pr-10 pl-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right font-mono text-sm"
+                      placeholder="رمز عبور"
+                      className="block w-full pr-10 pl-11 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right font-mono text-sm transition"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminPass(!showAdminPass)}
+                      className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer transition"
+                      title={showAdminPass ? 'مخفی کردن رمز' : 'نمایش رمز'}
+                    >
+                      {showAdminPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
 
                 {loginError && (
-                  <div className="p-3 rounded-xl bg-red-950/50 border border-red-800/40 text-red-300 text-xs flex items-center gap-2">
+                  <div className="p-3 rounded-xl bg-red-950/60 border border-red-800/50 text-red-300 text-xs flex items-center gap-2 animate-in fade-in duration-150">
                     <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                    <span>{loginError}</span>
+                    <span className="font-bold">{loginError}</span>
                   </div>
                 )}
 
-                <div className="pt-1">
+                <div className="pt-2">
                   <button
                     type="submit"
-                    className="w-full flex justify-center py-3.5 px-4 rounded-xl shadow-lg text-xs font-black text-white bg-slate-800 hover:bg-slate-700 border border-amber-500/40 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all cursor-pointer"
+                    disabled={isAdminLoggingIn}
+                    className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow-lg text-sm font-black text-slate-950 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-yellow-400 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    ورود به پنل مدیریت کل
+                    {isAdminLoggingIn ? (
+                      <>
+                        <RotateCcw className="w-4 h-4 animate-spin" />
+                        <span>در حال ورود...</span>
+                      </>
+                    ) : (
+                      <span>ورود</span>
+                    )}
                   </button>
                 </div>
               </form>
@@ -2533,27 +2742,34 @@ export default function App() {
           <span className="text-xs md:text-sm font-black text-slate-900">واته</span>
         </div>
 
-        {/* Small Responsive Copper Price Button */}
-        <button
-          onClick={() => {
-            if (currentUser.role === 'admin') {
-              setTempBuyPriceInput(buyCopperPrice > 0 ? formatNumber(buyCopperPrice) : '');
-              setTempSellPriceInput(sellCopperPrice > 0 ? formatNumber(sellCopperPrice) : '');
+        {/* Responsive Copper Price */}
+        {currentUser.role === 'admin' ? (
+          <button
+            onClick={() => {
+              setTempBuyPriceInput(buyCopperPrice > 0 ? buyCopperPrice.toLocaleString('en-US') : '');
+              setTempSellPriceInput(sellCopperPrice > 0 ? sellCopperPrice.toLocaleString('en-US') : '');
               setActiveModal('market_price_settings');
-            }
-          }}
-          className="flex items-center gap-1 md:gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg px-2 py-1 text-[10px] md:text-xs font-bold transition shadow-sm cursor-pointer shrink-0"
-        >
-          <Coins className="w-3 h-3 text-amber-600 shrink-0" />
-          <span className="hidden sm:inline">نرخ لوله مسی:</span>
-          <span className="inline sm:hidden">نرخ:</span>
-          <span className="font-mono bg-white px-1 py-0.5 rounded text-slate-900 border border-slate-100 font-extrabold">
-            {formatNumber(buyCopperPrice)} ت
-          </span>
-          {currentUser.role === 'admin' && (
+            }}
+            className="flex items-center gap-1 md:gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg px-2 py-1 text-[10px] md:text-xs font-bold transition shadow-sm cursor-pointer shrink-0"
+          >
+            <Coins className="w-3 h-3 text-amber-600 shrink-0" />
+            <span className="hidden sm:inline">نرخ لوله مسی:</span>
+            <span className="inline sm:hidden">نرخ:</span>
+            <span className="font-mono bg-white px-1 py-0.5 rounded text-slate-900 border border-slate-100 font-extrabold">
+              {formatNumber(buyCopperPrice)} ت
+            </span>
             <span className="text-[8px] bg-amber-600 text-white px-1 py-0.2 rounded font-black shrink-0">تنظیم</span>
-          )}
-        </button>
+          </button>
+        ) : (
+          <div className="flex items-center gap-1 md:gap-1.5 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg px-2.5 py-1 text-[10px] md:text-xs font-bold shadow-xs shrink-0">
+            <Coins className="w-3 h-3 text-amber-600 shrink-0" />
+            <span className="hidden sm:inline">نرخ روز لوله مسی:</span>
+            <span className="inline sm:hidden">نرخ:</span>
+            <span className="font-mono bg-white px-1 py-0.5 rounded text-slate-900 border border-slate-100 font-extrabold">
+              {formatNumber(buyCopperPrice)} ت
+            </span>
+          </div>
+        )}
 
         {/* User Profile Info, Change Password Lock Button & Logout */}
         <div className="flex items-center gap-1.5 shrink-0">
@@ -2566,7 +2782,7 @@ export default function App() {
                 {currentUser.name}
               </span>
               <span className="block text-[7px] md:text-[8px] text-slate-400 leading-none font-mono mt-0.5">
-                {currentUser.role === 'admin' ? 'مدیر عامل' : 'مشتری'}
+                {currentUser.role === 'admin' ? 'مدیر عامل' : 'طرف حساب / مشتری'}
               </span>
             </div>
           </div>
@@ -3124,18 +3340,32 @@ export default function App() {
                                   فاکتور چاپی
                                 </button>
                                 {currentUser.role === 'admin' && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setTxToDelete(tx);
-                                    }}
-                                    className="text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition font-bold text-[10px] flex items-center gap-1 cursor-pointer"
-                                    title="حذف این سند تراکنش"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                    <span>حذف</span>
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openEditTransactionModal(tx);
+                                      }}
+                                      className="text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 px-2 py-1 rounded-lg transition font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                      title="اصلاح وزن یا مشخصات این سند"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                      <span>اصلاح</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setTxToDelete(tx);
+                                      }}
+                                      className="text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                      title="حذف این سند تراکنش"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>حذف</span>
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </td>
@@ -3291,57 +3521,67 @@ export default function App() {
 
             </div>
 
-            {/* Quick Action buttons (Available for both Admin and Customer) */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-400 block mb-3">عملیات سریع برای این حساب معاملاتی:</span>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => openActionModal('buy')}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
-                >
-                  <span>+ خرید لوله مسی</span>
-                </button>
-                <button
-                  onClick={() => openActionModal('sell')}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
-                >
-                  <span>- فروش لوله مسی</span>
-                </button>
-                <button
-                  onClick={() => openActionModal('deposit')}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
-                >
-                  <span>📥 واریز وجه ریالی</span>
-                </button>
-                <button
-                  onClick={() => openActionModal('withdraw')}
-                  className="bg-red-600 hover:bg-red-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
-                >
-                  <span>📤 برداشت وجه ریالی</span>
-                </button>
-                {currentUser.role === 'admin' && (
-                  <>
-                    <button
-                      onClick={() => openActionModal('check')}
-                      className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
-                    >
-                      <span>✍️ ثبت چک صیادی</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAdjustCashAmount('');
-                        setAdjustCopperAmount('');
-                        setAdjustReason('');
-                        setActiveModal('adjust_account');
-                      }}
-                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
-                    >
-                      <span>🎛️ سند اصلاح حساب / تعدیل</span>
-                    </button>
-                  </>
-                )}
+            {/* Quick Action buttons (Only for Admin - Completely hidden for Customer Portal) */}
+            {currentUser.role === 'admin' ? (
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <span className="text-[11px] font-bold text-slate-400 block mb-3">عملیات ثبت معامله و گردش حساب (مدیریت):</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => openActionModal('buy')}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                  >
+                    <span>+ خرید لوله مسی</span>
+                  </button>
+                  <button
+                    onClick={() => openActionModal('sell')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                  >
+                    <span>- فروش لوله مسی</span>
+                  </button>
+                  <button
+                    onClick={() => openActionModal('deposit')}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                  >
+                    <span>📥 واریز وجه ریالی</span>
+                  </button>
+                  <button
+                    onClick={() => openActionModal('withdraw')}
+                    className="bg-red-600 hover:bg-red-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                  >
+                    <span>📤 برداشت وجه ریالی</span>
+                  </button>
+                  <button
+                    onClick={() => openActionModal('check')}
+                    className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                  >
+                    <span>✍️ ثبت چک صیادی</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAdjustCashAmount('');
+                      setAdjustCopperAmount('');
+                      setAdjustReason('');
+                      setActiveModal('adjust_account');
+                    }}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                  >
+                    <span>🎛️ سند اصلاح حساب / تعدیل</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-right shadow-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                  <span className="text-xs font-black text-slate-900">
+                    پرتال رسمی استعلام موجودی، ارزش روز دارایی‌ها و کاردکس معاملات شما
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-amber-900 bg-white/90 border border-amber-200 px-3 py-1 rounded-xl self-start sm:self-auto">
+                  صدور فاکتور و ثبت اسناد مالی توسط واحد بازرگانی مرکزی واته انجام می‌شود
+                </span>
+              </div>
+            )}
 
             {/* Car-dex Table layout */}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -3523,18 +3763,32 @@ export default function App() {
                               فاکتور چاپی
                             </button>
                             {currentUser.role === 'admin' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setTxToDelete(tx);
-                                }}
-                                className="text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition font-bold text-[10px] flex items-center gap-1 cursor-pointer"
-                                title="حذف این سند تراکنش"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                                <span>حذف</span>
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditTransactionModal(tx);
+                                  }}
+                                  className="text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 px-2 py-1 rounded-lg transition font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                  title="اصلاح وزن یا مشخصات این سند"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                  <span>اصلاح</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setTxToDelete(tx);
+                                  }}
+                                  className="text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                  title="حذف این سند تراکنش"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>حذف</span>
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -3623,10 +3877,13 @@ export default function App() {
               )}
 
               {/* 1. وزن مس (کیلوگرم) */}
-              <div>
-                <label className="block text-xs font-black text-slate-800 mb-1.5">
-                  وزن مس (کیلوگرم) <span className="text-red-500">*</span>
-                </label>
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-black text-slate-800">
+                    وزن مس (کیلوگرم) <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-bold">اعشاری مجاز (مثال: ۱۲.۵ یا ۲.۳۰)</span>
+                </div>
                 <div className="relative rounded-xl shadow-sm">
                   <input
                     type="text"
@@ -3634,13 +3891,33 @@ export default function App() {
                     autoFocus
                     value={buyWeight}
                     onChange={(e) => setBuyWeight(e.target.value)}
-                    placeholder="مثال: ۵۰"
+                    placeholder="مثال: ۵۰ یا ۱۲.۵"
                     className="w-full pl-14 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-sm font-mono text-center font-bold transition"
                   />
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
                     کیلوگرم
                   </div>
                 </div>
+
+                {/* دکمه‌های وزن سریع */}
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {[10, 25, 50, 100, 200, 350].map(w => (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => setBuyWeight(w.toString())}
+                      className="px-2 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-amber-100 text-slate-700 rounded-lg border border-slate-200 cursor-pointer transition"
+                    >
+                      {w} ک‌گ
+                    </button>
+                  ))}
+                </div>
+
+                {parseCleanWeight(buyWeight) > 0 && (
+                  <div className="text-[11px] font-bold text-amber-900 bg-amber-50 p-2 rounded-xl text-center border border-amber-200">
+                    وزن محاسبه‌شده: {formatKg(parseCleanWeight(buyWeight))} کیلوگرم
+                  </div>
+                )}
               </div>
 
               {/* 2. قیمت هر کیلو (تومان) */}
@@ -3652,12 +3929,12 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    value={buyRate === 0 ? '' : formatNumber(buyRate)}
+                    value={buyRate === 0 ? '' : buyRate.toLocaleString('en-US')}
                     onChange={(e) => {
                       const num = parseCleanNumber(e.target.value);
                       setBuyRate(num);
                     }}
-                    placeholder="مثال: ۲,۱۵۰,۰۰۰"
+                    placeholder="مثال: 3,240,000"
                     className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-sm font-mono text-center font-bold transition"
                   />
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
@@ -3668,7 +3945,7 @@ export default function App() {
 
               {/* 3. کادر جمع کل فاکتور خرید */}
               {(() => {
-                const kgInput = parseCleanNumber(buyWeight);
+                const kgInput = parseCleanWeight(buyWeight);
                 const totalCost = kgInput * buyRate;
                 const activeId = currentUser?.role === 'customer' 
                   ? currentUser.id 
@@ -3762,7 +4039,7 @@ export default function App() {
             {(() => {
               const selectedSeller = customers.find(c => c.id === (sellSellerId || adminSelectedCustomerId)) || customers[0];
               const sellerCopper = sellModel === 'individual' ? (selectedSeller?.copperBalance || 0) : totalCopperPool;
-              const numericWeight = parseFloat(toEnglishDigits(sellWeight)) || 0;
+              const numericWeight = parseCleanWeight(sellWeight);
               const totalRevenue = numericWeight * sellRate;
               const remainingCopper = sellerCopper - numericWeight;
               const profitVal = (sellRate - (selectedSeller?.averageBuyPrice || 0)) * numericWeight;
@@ -4014,13 +4291,18 @@ export default function App() {
                           required
                           value={sellWeight}
                           onChange={(e) => setSellWeight(e.target.value)}
-                          placeholder="مثال: ۴۰"
+                          placeholder="مثال: ۴۰ یا ۱۲.۵"
                           className="w-full pl-12 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-xs font-mono text-center font-bold transition"
                         />
                         <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-[10px] text-slate-400 font-bold">
                           ک‌گ
                         </div>
                       </div>
+                      {parseCleanWeight(sellWeight) > 0 && (
+                        <div className="text-[10px] font-bold text-emerald-800 bg-emerald-50 py-1 px-1.5 rounded-lg text-center mt-1 border border-emerald-200">
+                          وزن واردشده: {formatKg(parseCleanWeight(sellWeight))} کیلوگرم
+                        </div>
+                      )}
                     </div>
 
                     {/* قیمت هر کیلو */}
@@ -4032,12 +4314,12 @@ export default function App() {
                         <input
                           type="text"
                           required
-                          value={sellRate === 0 ? '' : formatNumber(sellRate)}
+                          value={sellRate === 0 ? '' : sellRate.toLocaleString('en-US')}
                           onChange={(e) => {
                             const num = parseCleanNumber(e.target.value);
                             setSellRate(num);
                           }}
-                          placeholder="مثال: ۲,۳۰۰,۰۰۰"
+                          placeholder="مثال: 3,280,000"
                           className="w-full pl-14 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-xs font-mono text-center font-bold transition"
                         />
                         <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-[10px] text-slate-400 font-bold">
@@ -4183,20 +4465,35 @@ export default function App() {
                             setCheckAmount('');
                           } else {
                             const num = parseInt(raw, 10);
-                            setCheckAmount(formatNumber(num));
+                            setCheckAmount(num.toLocaleString('en-US'));
                           }
                         }}
-                        placeholder="۵۰۰,۰۰۰,۰۰۰"
+                        placeholder="500,000,000"
                         className="w-full pl-14 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm font-mono text-center font-bold"
                       />
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
                         تومان
                       </div>
                     </div>
+
+                    {/* دکمه‌های مبالغ سریع و آماده */}
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {[50000000, 100000000, 200000000, 500000000, 1000000000].map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setCheckAmount(amt.toLocaleString('en-US'))}
+                          className="px-2 py-1 text-[10px] font-bold bg-slate-50 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg border border-slate-200 cursor-pointer transition"
+                        >
+                          +{numToPersianWords(amt).replace(' تومان', '')}
+                        </button>
+                      ))}
+                    </div>
+
                     {checkVal > 0 && (
                       <div className="text-left pt-0.5">
-                        <span className="bg-indigo-50 border border-indigo-200 text-indigo-900 px-3 py-1 rounded-lg text-[10px] font-bold inline-block">
-                          {numToPersianWords(checkVal)} تومان
+                        <span className="bg-indigo-50 border border-indigo-200 text-indigo-900 px-3 py-1.5 rounded-lg text-xs font-bold inline-block">
+                          {toPersianDigits(checkVal.toLocaleString('en-US'))} تومان ({numToPersianWords(checkVal)})
                         </span>
                       </div>
                     )}
@@ -4204,9 +4501,14 @@ export default function App() {
 
                   {/* شماره صیاد / شناسه چک */}
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-800">
-                      شناسه ۱۶ رقمی چک صیادی <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="block text-xs font-bold text-slate-800">
+                        شناسه ۱۶ رقمی چک صیادی <span className="text-red-500">*</span>
+                      </label>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {checkNum.length} از ۱۶ رقم
+                      </span>
+                    </div>
                     <div className="relative">
                       <input
                         type="text"
@@ -4215,19 +4517,23 @@ export default function App() {
                         required
                         value={checkNum}
                         onChange={(e) => {
-                          const raw = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '').slice(0, 16);
-                          if (!raw) {
-                            setCheckNum('');
-                          } else {
-                            const chunks = raw.match(/.{1,4}/g);
-                            setCheckNum(chunks ? chunks.join(' - ') : raw);
-                          }
+                          const clean = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '').slice(0, 16);
+                          setCheckNum(clean);
                         }}
-                        placeholder="۴۲۰۴ - ۵۶۲۸ - ۱۲۹۰ - ۰۳۴۱"
-                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm font-mono text-center font-bold tracking-wider"
+                        placeholder="4204562812900341"
+                        className="w-full p-3 pr-10 pl-4 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-base font-mono text-center font-bold tracking-widest"
                       />
                       <Tag className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
                     </div>
+                    {checkNum.length === 16 ? (
+                      <div className="text-center bg-emerald-50 border border-emerald-200 text-emerald-800 py-1.5 px-3 rounded-lg text-xs font-mono font-bold">
+                        {checkNum.match(/.{1,4}/g)?.join(' - ')} (شناسه ۱۶ رقمی معتبر صیادی ✓)
+                      </div>
+                    ) : checkNum.length > 0 ? (
+                      <div className="text-center text-[11px] font-mono text-slate-500">
+                        نمایش چهاررقمی: {checkNum.match(/.{1,4}/g)?.join(' - ')}
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* توضیحات چک */}
@@ -4323,7 +4629,7 @@ export default function App() {
                         value={depositAmount}
                         onChange={(e) => {
                           const num = parseCleanNumber(e.target.value);
-                          setDepositAmount(num === 0 ? '' : formatNumber(num));
+                          setDepositAmount(num === 0 ? '' : num.toLocaleString('en-US'));
                         }}
                         placeholder="مثال: ۵۰,۰۰۰,۰۰۰"
                         className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm font-mono text-center font-bold transition"
@@ -4455,7 +4761,7 @@ export default function App() {
                         value={withdrawAmount}
                         onChange={(e) => {
                           const num = parseCleanNumber(e.target.value);
-                          setWithdrawAmount(num === 0 ? '' : formatNumber(num));
+                          setWithdrawAmount(num === 0 ? '' : num.toLocaleString('en-US'));
                         }}
                         placeholder="مثال: ۵۰,۰۰۰,۰۰۰"
                         className="w-full pl-16 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-sm font-mono text-center font-bold transition"
@@ -4699,15 +5005,30 @@ export default function App() {
                 <span>چاپ فاکتور رسمی</span>
               </button>
               {currentUser.role === 'admin' && (
-                <button
-                  type="button"
-                  onClick={() => setTxToDelete(selectedTx)}
-                  className="bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold py-2.5 px-3.5 rounded-xl transition text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                  title="حذف این سند تراکنش"
-                >
-                  <Trash2 className="w-4 h-4 text-rose-600" />
-                  <span>حذف تراکنش</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const t = selectedTx;
+                      setActiveModal(null);
+                      openEditTransactionModal(t);
+                    }}
+                    className="bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold py-2.5 px-3.5 rounded-xl transition text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="اصلاح وزن یا مبالغ این فاکتور"
+                  >
+                    <Edit2 className="w-4 h-4 text-blue-600" />
+                    <span>اصلاح وزن و سند</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTxToDelete(selectedTx)}
+                    className="bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold py-2.5 px-3.5 rounded-xl transition text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="حذف این سند تراکنش"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    <span>حذف تراکنش</span>
+                  </button>
+                </>
               )}
               <button
                 onClick={() => {
@@ -4872,9 +5193,9 @@ export default function App() {
                             onChange={(e) => {
                               const raw = toEnglishDigits(e.target.value.replace(/,/g, ''));
                               const num = parseFloat(raw);
-                              setDirectCashInput(isNaN(num) ? '' : formatNumber(num));
+                              setDirectCashInput(isNaN(num) ? '' : num.toLocaleString('en-US'));
                             }}
-                            placeholder="مثال: ۵۰۰,۰۰۰,۰۰۰"
+                            placeholder="مثال: 500,000,000"
                             className="w-full pl-14 pr-4 py-3 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono text-center font-black text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 transition shadow-sm"
                           />
                           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
@@ -5222,18 +5543,20 @@ export default function App() {
                               setTempBuyPriceInput('');
                             } else {
                               const num = parseInt(raw, 10);
-                              setTempBuyPriceInput(formatNumber(num));
+                              setTempBuyPriceInput(num.toLocaleString('en-US'));
                             }
                           }}
-                          placeholder="مثال: ۳,۲۴۰,۰۰۰"
+                          placeholder="مثال: 3,240,000"
                           className="w-full p-3 bg-white border-2 border-amber-500 rounded-xl text-slate-950 text-center font-black text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30"
                         />
                         <span className="absolute inset-y-0 left-3 flex items-center text-xs text-slate-400 font-bold">تومان/کیلو</span>
                       </div>
 
                       {buyVal > 0 && (
-                        <div className="text-[10px] text-amber-800 text-center font-bold">
-                          {numToPersianWords(buyVal)} تومان
+                        <div className="text-[11px] text-amber-900 bg-amber-100/70 p-2 rounded-xl text-center font-bold border border-amber-200/80">
+                          <span>{toPersianDigits(buyVal.toLocaleString('en-US'))} تومان</span>
+                          <span className="mx-1.5 text-amber-600">•</span>
+                          <span>{numToPersianWords(buyVal)} تومان</span>
                         </div>
                       )}
 
@@ -5241,14 +5564,14 @@ export default function App() {
                       <div className="space-y-1">
                         <span className="text-[9px] text-slate-400 block font-bold">نرخ‌های رایج خرید مس:</span>
                         <div className="flex flex-wrap gap-1">
-                          {[2800000, 2830000, 2850000, 2900000, 3000000, 3100000, 3200000, 3240000].map(p => (
+                          {[2800000, 2830000, 2850000, 2900000, 3000000, 3100000, 3200000, 3240000, 3300000].map(p => (
                             <button
                               key={p}
                               type="button"
-                              onClick={() => setTempBuyPriceInput(formatNumber(p))}
+                              onClick={() => setTempBuyPriceInput(p.toLocaleString('en-US'))}
                               className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition cursor-pointer ${buyVal === p ? 'bg-amber-600 text-white border-amber-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
                             >
-                              {formatNumber(p)}
+                              {toPersianDigits(p.toLocaleString('en-US'))}
                             </button>
                           ))}
                         </div>
@@ -5278,18 +5601,20 @@ export default function App() {
                               setTempSellPriceInput('');
                             } else {
                               const num = parseInt(raw, 10);
-                              setTempSellPriceInput(formatNumber(num));
+                              setTempSellPriceInput(num.toLocaleString('en-US'));
                             }
                           }}
-                          placeholder="مثال: ۳,۲۸۰,۰۰۰"
+                          placeholder="مثال: 3,280,000"
                           className="w-full p-3 bg-white border-2 border-emerald-500 rounded-xl text-slate-950 text-center font-black text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                         />
                         <span className="absolute inset-y-0 left-3 flex items-center text-xs text-slate-400 font-bold">تومان/کیلو</span>
                       </div>
 
                       {sellVal > 0 && (
-                        <div className="text-[10px] text-emerald-800 text-center font-bold">
-                          {numToPersianWords(sellVal)} تومان
+                        <div className="text-[11px] text-emerald-900 bg-emerald-100/70 p-2 rounded-xl text-center font-bold border border-emerald-200/80">
+                          <span>{toPersianDigits(sellVal.toLocaleString('en-US'))} تومان</span>
+                          <span className="mx-1.5 text-emerald-600">•</span>
+                          <span>{numToPersianWords(sellVal)} تومان</span>
                         </div>
                       )}
 
@@ -5299,26 +5624,26 @@ export default function App() {
                         <div className="flex flex-wrap gap-1">
                           <button
                             type="button"
-                            onClick={() => setTempSellPriceInput(tempBuyPriceInput || (buyVal > 0 ? formatNumber(buyVal) : ''))}
+                            onClick={() => setTempSellPriceInput(tempBuyPriceInput || (buyVal > 0 ? buyVal.toLocaleString('en-US') : ''))}
                             className="px-2 py-1 text-[10px] font-black rounded-lg border bg-white hover:bg-slate-50 text-slate-700 cursor-pointer"
                           >
                             هم‌قیمت خرید
                           </button>
                           <button
                             type="button"
-                            onClick={() => setTempSellPriceInput(formatNumber(Math.max(0, buyVal - 150000)))}
+                            onClick={() => setTempSellPriceInput(Math.max(0, buyVal - 150000).toLocaleString('en-US'))}
                             className={`px-2 py-1 text-[10px] font-black rounded-lg border transition cursor-pointer ${(buyVal - sellVal === 150000) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
                           >
                             ۱۵۰ هزار کمتر
                           </button>
-                          {[2850000, 3000000, 3100000, 3200000, 3280000].map(p => (
+                          {[2850000, 3000000, 3100000, 3200000, 3280000, 3350000].map(p => (
                             <button
                               key={p}
                               type="button"
-                              onClick={() => setTempSellPriceInput(formatNumber(p))}
+                              onClick={() => setTempSellPriceInput(p.toLocaleString('en-US'))}
                               className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition cursor-pointer ${sellVal === p ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
                             >
-                              {formatNumber(p)}
+                              {toPersianDigits(p.toLocaleString('en-US'))}
                             </button>
                           ))}
                         </div>
@@ -5822,6 +6147,242 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 13.6. MODAL: "اصلاح و ویرایش سند تراکنش و اصلاح وزن" */}
+      {txToEdit && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto" dir="rtl">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 my-6">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white p-5 flex justify-between items-center">
+              <button 
+                type="button" 
+                onClick={() => setTxToEdit(null)} 
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <h3 className="text-base font-black text-white">اصلاح و ویرایش سند تراکنش</h3>
+                  <p className="text-[11px] text-blue-100 mt-0.5">اصلاح وزن مس، نرخ، مبالغ و همگام‌سازی خودکار با موجودی‌ها</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-white/20 text-white flex items-center justify-center">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={confirmEditTransaction} className="p-5 md:p-6 space-y-4 max-h-[82vh] overflow-y-auto text-right">
+              
+              {editError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 font-bold animate-in fade-in duration-150">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              {/* Transaction identity info */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                  <span className="text-slate-500 font-bold">طرف حساب:</span>
+                  <span className="font-black text-slate-950 font-sans text-sm">{txToEdit.customerName}</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-slate-500 font-bold">نوع معامله:</span>
+                  <span className="font-black px-2 py-0.5 rounded-md text-slate-800 bg-white border border-slate-200">
+                    {txToEdit.type === 'buy' && 'خرید مس'}
+                    {txToEdit.type === 'sell' && 'فروش مس'}
+                    {txToEdit.type === 'deposit' && 'واریز وجه نقدی'}
+                    {txToEdit.type === 'withdraw' && 'تسویه/برداشت'}
+                    {txToEdit.type === 'check_register' && 'ثبت چک صیادی'}
+                    {txToEdit.type === 'adjustment' && 'اصلاح حساب'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-slate-500 font-bold">شناسه سند:</span>
+                  <span className="font-mono text-slate-700 font-bold">{txToEdit.id.replace('tx_', '')}</span>
+                </div>
+              </div>
+
+              {/* Weight field (if applicable) */}
+              {(txToEdit.type === 'buy' || txToEdit.type === 'sell' || txToEdit.type === 'adjustment' || txToEdit.amountKg !== undefined) && (
+                <div className="space-y-1.5 bg-amber-50/50 p-3.5 rounded-2xl border border-amber-200">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-xs font-black text-amber-950">
+                      وزن اصلاح‌شده مس (کیلوگرم) <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[10px] text-amber-800 font-bold font-mono">
+                      وزن قبلی: {formatKg(txToEdit.amountKg || 0)} ک‌گ
+                    </span>
+                  </div>
+                  <div className="relative rounded-xl shadow-sm">
+                    <input
+                      type="text"
+                      required
+                      value={editWeightInput}
+                      onChange={(e) => setEditWeightInput(e.target.value)}
+                      placeholder="مثال: ۵۰ یا ۱۲.۵"
+                      className="w-full pl-14 pr-4 py-2.5 bg-white border border-amber-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-center font-black text-sm"
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-xs text-amber-800 font-bold">
+                      کیلوگرم
+                    </div>
+                  </div>
+                  {parseCleanWeight(editWeightInput) > 0 && (
+                    <div className="text-[11px] text-amber-900 bg-amber-100/60 p-2 rounded-xl text-center font-bold">
+                      معادل {formatKg(parseCleanWeight(editWeightInput))} کیلوگرم
+                      {txToEdit.amountKg !== undefined && (
+                        <span className="block text-[10px] text-amber-800 font-mono mt-0.5">
+                          تفاضل با قبل: {(parseCleanWeight(editWeightInput) - (txToEdit.amountKg || 0)).toFixed(2)} ک‌گ
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Rate field (if applicable) */}
+              {(txToEdit.type === 'buy' || txToEdit.type === 'sell' || txToEdit.ratePerKg !== undefined) && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-xs font-bold text-slate-800">
+                      نرخ هر کیلوگرم (تومان)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const w = parseCleanWeight(editWeightInput);
+                        const r = parseCleanNumber(editRateInput);
+                        if (w > 0 && r > 0) {
+                          setEditTotalInput(Math.round(w * r).toLocaleString('en-US'));
+                        }
+                      }}
+                      className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                    >
+                      محاسبه خودکار مبلغ (وزن × نرخ)
+                    </button>
+                  </div>
+                  <div className="relative rounded-xl shadow-sm">
+                    <input
+                      type="text"
+                      value={editRateInput}
+                      onChange={(e) => {
+                        const raw = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                        if (!raw) {
+                          setEditRateInput('');
+                        } else {
+                          const num = parseInt(raw, 10);
+                          setEditRateInput(num.toLocaleString('en-US'));
+                        }
+                      }}
+                      placeholder="مثال: 3,240,000"
+                      className="w-full pl-16 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-center font-bold text-sm"
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
+                      تومان / ک‌گ
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Total amount field */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-black text-slate-800">
+                    مبلغ کل سند (تومان) <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    مبلغ قبلی: {formatNumber(txToEdit.totalAmount)} ت
+                  </span>
+                </div>
+                <div className="relative rounded-xl shadow-sm">
+                  <input
+                    type="text"
+                    required
+                    value={editTotalInput}
+                    onChange={(e) => {
+                      const raw = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                      if (!raw) {
+                        setEditTotalInput('');
+                      } else {
+                        const num = parseInt(raw, 10);
+                        setEditTotalInput(num.toLocaleString('en-US'));
+                      }
+                    }}
+                    placeholder="مثال: 402,570,000"
+                    className="w-full pl-14 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-center font-black text-sm"
+                  />
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-xs text-slate-400 font-bold">
+                    تومان
+                  </div>
+                </div>
+                {parseCleanNumber(editTotalInput) > 0 && (
+                  <div className="text-[11px] text-slate-700 bg-slate-50 p-2 rounded-xl text-center font-bold border border-slate-200">
+                    {numToPersianWords(parseCleanNumber(editTotalInput))}
+                  </div>
+                )}
+              </div>
+
+              {/* Date field */}
+              <div>
+                <ShamsiDatePicker
+                  label="تاریخ سند معامله"
+                  required
+                  value={editDateInput}
+                  onChange={setEditDateInput}
+                  accentColor="blue"
+                  presets={[
+                    { label: 'امروز', daysOffset: 0 },
+                    { label: 'دیروز', daysOffset: -1 },
+                    { label: '۷ روز قبل', daysOffset: -7 },
+                  ]}
+                />
+              </div>
+
+              {/* Description field */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  شرح و توضیحات سند
+                </label>
+                <textarea
+                  value={editDescInput}
+                  onChange={(e) => setEditDescInput(e.target.value)}
+                  rows={2}
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="شرح سند، فروشنده/خریدار..."
+                />
+              </div>
+
+              {/* Impact info notice */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-900 leading-relaxed font-bold">
+                ℹ️ با تایید، مابه‌التفاوت وزن و مبالغ مستقیماً روی مانده حساب و موجودی مس مشتری و دیتابیس اعمال خواهد شد.
+              </div>
+
+              {/* Actions */}
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="submit"
+                  disabled={isEditingTx}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black py-3 px-4 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                >
+                  <Edit2 className="w-4 h-4" />
+                  <span>{isEditingTx ? 'در حال ثبت در دیتابیس...' : 'ثبت اصلاحات سند'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTxToEdit(null)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-5 rounded-xl transition text-xs cursor-pointer"
+                >
+                  انصراف
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {activeModal === 'manage_checks' && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto" dir="rtl">
           <div className="bg-white rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-slate-100 my-6 animate-in fade-in zoom-in-95 duration-150">
