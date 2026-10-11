@@ -84,9 +84,9 @@ const INITIAL_CUSTOMERS: Customer[] = [
     id: 'c1',
     name: 'جواد شکرالهی',
     mobile: '09127697501',
-    walletCash: 0,
+    walletCash: 514800000,
     copperBalance: 322.01,
-    sharePercentage: 40.56,
+    sharePercentage: 50.99,
     realizedProfit: 284547109,
     profitChangePercent: 27.3,
     averageBuyPrice: 3240000,
@@ -99,7 +99,7 @@ const INITIAL_CUSTOMERS: Customer[] = [
     mobile: '09191628233',
     walletCash: 0,
     copperBalance: 32.26,
-    sharePercentage: 4.06,
+    sharePercentage: 5.11,
     realizedProfit: 0,
     profitChangePercent: 0,
     averageBuyPrice: 3100000,
@@ -110,10 +110,10 @@ const INITIAL_CUSTOMERS: Customer[] = [
     id: 'c3',
     name: 'علی ظفری پور',
     mobile: '09134263654',
-    walletCash: 0,
-    copperBalance: 310.94,
-    sharePercentage: 39.17,
-    realizedProfit: 9273000,
+    walletCash: 700000000,
+    copperBalance: 119.16,
+    sharePercentage: 18.87,
+    realizedProfit: 166533274,
     profitChangePercent: 3.1,
     averageBuyPrice: 2830000,
     inTransitChecks: 0,
@@ -123,9 +123,9 @@ const INITIAL_CUSTOMERS: Customer[] = [
     id: 'c4',
     name: 'مرتضی محمدی',
     mobile: '09936300529',
-    walletCash: 0,
-    copperBalance: 128.69,
-    sharePercentage: 16.21,
+    walletCash: 16,
+    copperBalance: 158.10,
+    sharePercentage: 25.03,
     realizedProfit: 24560000,
     profitChangePercent: 8.5,
     averageBuyPrice: 3100000,
@@ -223,7 +223,13 @@ export default function App() {
         const parsed: Customer[] = JSON.parse(saved);
         return parsed.map(c => {
           if (c.id === 'c2' && c.copperBalance !== 32.26) {
-            return { ...c, copperBalance: 32.26, sharePercentage: 4.06 };
+            return { ...c, copperBalance: 32.26, sharePercentage: 5.11 };
+          }
+          if (c.id === 'c3' && (c.copperBalance > 120 || c.copperBalance === 502.72 || c.copperBalance === 310.94)) {
+            return { ...c, copperBalance: 119.16, walletCash: 700000000, realizedProfit: 166533274, sharePercentage: 18.87 };
+          }
+          if (c.id === 'c4' && c.copperBalance < 130) {
+            return { ...c, copperBalance: 158.10, walletCash: 16, sharePercentage: 25.03 };
           }
           return c;
         });
@@ -937,7 +943,7 @@ export default function App() {
     localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
     localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTransactions));
 
-    setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
+    setCompanyWarehouseCopper(prev => prev + kg);
     setCustomers(finalized);
     setTransactions(nextTransactions);
     setActiveModal(null);
@@ -1001,7 +1007,7 @@ export default function App() {
             walletCash: newWallet,
             inTransitChecks: newChecks,
             blockedCopper: newBlocked,
-            copperBalance: Math.max(0, c.copperBalance - kg),
+            copperBalance: Number(Math.max(0, c.copperBalance - kg).toFixed(2)),
             realizedProfit: c.realizedProfit + (profit > 0 ? profit : 0)
           };
         }
@@ -1050,9 +1056,7 @@ export default function App() {
         profitVal: profit > 0 ? profit : undefined
       };
 
-      if (sellDestination === 'internal') {
-        setCompanyWarehouseCopper(prev => prev + kg);
-      }
+      setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
 
       const nextTransactions = [newTx, ...transactions];
       localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
@@ -1136,7 +1140,7 @@ export default function App() {
           walletCash: newWallet,
           inTransitChecks: newChecks,
           blockedCopper: newBlocked,
-          copperBalance: Math.max(0, c.copperBalance - custKg),
+          copperBalance: Number(Math.max(0, c.copperBalance - custKg).toFixed(2)),
           realizedProfit: c.realizedProfit + (profit > 0 ? profit : 0)
         };
       });
@@ -1147,9 +1151,7 @@ export default function App() {
         sharePercentage: newTotalCopper > 0 ? (c.copperBalance / newTotalCopper) * 100 : 0
       }));
 
-      if (sellDestination === 'internal') {
-        setCompanyWarehouseCopper(prev => prev + kg);
-      }
+      setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
 
       const nextTransactions = [...newTxs, ...transactions];
       localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
@@ -1675,7 +1677,7 @@ export default function App() {
             const kg = tx.amountKg || 0;
             newCopperBalance = Math.max(0, newCopperBalance - kg);
             newWalletCash = newWalletCash + (tx.totalAmount || 0);
-            setCompanyWarehouseCopper(prev => prev + kg);
+            setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
           } else if (tx.type === 'sell') {
             const kg = tx.amountKg || 0;
             newCopperBalance = newCopperBalance + kg;
@@ -1688,7 +1690,7 @@ export default function App() {
                 newRealizedProfit = Math.max(0, newRealizedProfit - tx.profitVal);
               }
             }
-            setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
+            setCompanyWarehouseCopper(prev => prev + kg);
           } else if (tx.type === 'deposit') {
             newWalletCash = Math.max(0, newWalletCash - (tx.totalAmount || 0));
           } else if (tx.type === 'withdraw') {
@@ -1806,14 +1808,14 @@ export default function App() {
           // If bought more weight, copper increases, wallet cash decreases
           newCopperBalance = Math.max(0, newCopperBalance + diffWeight);
           newWalletCash = newWalletCash - diffCash;
-          setCompanyWarehouseCopper(prev => Math.max(0, prev - diffWeight));
+          setCompanyWarehouseCopper(prev => Math.max(0, prev + diffWeight));
         } else if (origTx.type === 'sell') {
           // If sold more weight, copper decreases, wallet cash increases
           newCopperBalance = Math.max(0, newCopperBalance - diffWeight);
           if (origTx.status === 'completed') {
             newWalletCash = newWalletCash + diffCash;
           }
-          setCompanyWarehouseCopper(prev => Math.max(0, prev + diffWeight));
+          setCompanyWarehouseCopper(prev => Math.max(0, prev - diffWeight));
         } else if (origTx.type === 'deposit') {
           newWalletCash = newWalletCash + diffCash;
         } else if (origTx.type === 'withdraw') {
