@@ -285,6 +285,7 @@ export default function App() {
   const [buyCustomerId, setBuyCustomerId] = useState('');
   const [buyWeight, setBuyWeight] = useState('');
   const [buyRate, setBuyRate] = useState(buyCopperPrice);
+  const [buyDate, setBuyDate] = useState<string>(() => getTodayShamsi());
   const [buyResponsible, setBuyResponsible] = useState('حسابدار مس');
   const [buyDesc, setBuyDesc] = useState('');
   const [formError, setFormError] = useState('');
@@ -952,6 +953,7 @@ export default function App() {
       setBuyCustomerId(defaultCustId);
       setBuyWeight('');
       setBuyRate(buyCopperPrice);
+      setBuyDate(getTodayShamsi());
       setBuyResponsible('حسابدار مس');
       setBuyDesc('خرید لوله مسی - فروشنده: انبار شرکت مس و اته');
     } else if (type === 'sell') {
@@ -1031,18 +1033,20 @@ export default function App() {
     const afterCash = currentWallet - totalCost;
 
 
+    const txDate = buyDate || getTodayShamsi();
+
     const newTx: Transaction = {
       id: 'tx_' + Date.now(),
       customerId: client.id,
       customerName: client.name,
       type: 'buy',
-      date: new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date()),
+      date: txDate,
       time: new Date().toLocaleTimeString('fa-IR'),
       amountKg: kg,
       ratePerKg: buyRate,
       totalAmount: totalCost,
       status: 'completed',
-      description: `خرید لوله مسی (${formatKg(kg)} ک‌گ با نرخ ${formatNumber(buyRate)} ت)`,
+      description: buyDesc.trim() || `خرید لوله مسی (${formatKg(kg)} ک‌گ با نرخ ${formatNumber(buyRate)} ت)`,
       afterWalletCash: afterCash
     };
 
@@ -1056,6 +1060,10 @@ export default function App() {
     setCustomers(updatedCustomers);
     setTransactions(updatedTransactions);
     setActiveModal(null);
+
+    // Sync to Supabase
+    supabase.from('customers').upsert(updatedCustomers.map(mapCustomerToDb)).then();
+    supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
   };
 
   // SELL copper transaction
@@ -3968,7 +3976,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* 2. قیمت هر کیلو (تومان) */}
+              {/* قیمت هر کیلو (تومان) */}
               <div>
                 <label className="block text-xs font-black text-slate-800 mb-1.5">
                   قیمت هر کیلوگرم (تومان) <span className="text-red-500">*</span>
@@ -3989,6 +3997,22 @@ export default function App() {
                     تومان / ک‌گ
                   </div>
                 </div>
+              </div>
+
+              {/* تاریخ خرید مس */}
+              <div>
+                <ShamsiDatePicker
+                  label="تاریخ خرید مس"
+                  required
+                  value={buyDate}
+                  onChange={setBuyDate}
+                  accentColor="amber"
+                  presets={[
+                    { label: 'امروز', daysOffset: 0 },
+                    { label: 'دیروز', daysOffset: -1 },
+                    { label: '۷ روز قبل', daysOffset: -7 },
+                  ]}
+                />
               </div>
 
               {/* 3. کادر جمع کل فاکتور خرید */}
