@@ -76,6 +76,7 @@ interface Transaction {
   description?: string;
   checkNumber?: string; // for check register
   afterWalletCash?: number; // wallet balance after transaction
+  afterCopperBalance?: number; // copper balance after transaction
   profitVal?: number; // profit achieved
 }
 
@@ -468,35 +469,38 @@ export default function App() {
     async function fetchFromSupabase() {
       try {
         // 1. Fetch Customers
+        let initialCusts: Customer[] = INITIAL_CUSTOMERS;
         const { data: custData, error: custErr } = await supabase.from('customers').select('*').order('created_at', { ascending: true });
-        if (!custErr && custData && custData.length >= 4 && isMounted) {
-          setCustomers(custData.map(mapDbCustomer));
-        } else if (isMounted) {
-          // Seed Supabase with initial 4 customers if empty or incomplete
+        if (!custErr && custData && custData.length >= 4) {
+          initialCusts = custData.map(mapDbCustomer);
+        } else {
           const seedData = INITIAL_CUSTOMERS.map(mapCustomerToDb);
           await supabase.from('customers').upsert(seedData);
           const { data: refreshedCust } = await supabase.from('customers').select('*').order('created_at', { ascending: true });
-          if (refreshedCust && refreshedCust.length > 0 && isMounted) {
-            setCustomers(refreshedCust.map(mapDbCustomer));
-          } else if (isMounted) {
-            setCustomers(INITIAL_CUSTOMERS);
+          if (refreshedCust && refreshedCust.length > 0) {
+            initialCusts = refreshedCust.map(mapDbCustomer);
           }
         }
 
         // 2. Fetch Transactions
+        let initialTxs: Transaction[] = INITIAL_TRANSACTIONS;
         const { data: txData, error: txErr } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
-        if (!txErr && txData && txData.length >= 30 && isMounted) {
-          setTransactions(txData.map(mapDbTransaction));
-        } else if (isMounted) {
-          // Seed Supabase with all 30 initial transactions if empty or incomplete
+        if (!txErr && txData && txData.length >= 30) {
+          initialTxs = txData.map(mapDbTransaction);
+        } else {
           const seedTxs = INITIAL_TRANSACTIONS.map(mapTransactionToDb);
           await supabase.from('transactions').upsert(seedTxs);
           const { data: refreshedTxs } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
-          if (refreshedTxs && refreshedTxs.length > 0 && isMounted) {
-            setTransactions(refreshedTxs.map(mapDbTransaction));
-          } else if (isMounted) {
-            setTransactions(INITIAL_TRANSACTIONS);
+          if (refreshedTxs && refreshedTxs.length > 0) {
+            initialTxs = refreshedTxs.map(mapDbTransaction);
           }
+        }
+
+        // 3. Calibrate full ledger like Excel so every transaction's afterWalletCash is accurate
+        const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(initialTxs, initialCusts);
+        if (isMounted) {
+          setCustomers(updatedCustomers);
+          setTransactions(updatedTransactions);
         }
 
         // 3. Fetch Company Settings
@@ -678,6 +682,128 @@ export default function App() {
     if (res) res += " تومان";
     else res = `${num} تومان`;
     return `معادل ${res}`;
+  };
+
+  // Universal Excel-like ledger recalculation engine
+  // Chains all transactions chronologically and recalculates:
+  // running cash (afterWalletCash), running copper (afterCopperBalance),
+  // weighted average buy price, realized profit, and final customer balances.
+  const recalculateLedgerForCustomers = (
+    allTransactions: Transaction[],
+    allCustomers: Customer[],
+    targetCustomerId?: string
+  ): { updatedTransactions: Transaction[]; updatedCustomers: Customer[] } => {
+    const customerIdsToRecalc = targetCustomerId 
+      ? [targetCustomerId] 
+      : allCustomers.map(c => c.id);
+
+    const txMap = new Map<string, Transaction>(allTransactions.map(t => [t.id, { ...t }]));
+    const custMap = new Map<string, Customer>(allCustomers.map(c => [c.id, { ...c }]));
+
+    for (const custId of customerIdsToRecalc) {
+      const cust = custMap.get(custId);
+      if (!cust) continue;
+
+      // Extract all transactions for this customer
+      const custTxs = Array.from(txMap.values()).filter(t => t.customerId === custId);
+
+      // Sort strictly chronologically (earliest date and time to latest)
+      custTxs.sort((a, b) => {
+        const da = toEnglishDigits(a.date || '');
+        const db = toEnglishDigits(b.date || '');
+        const dateComp = da.localeCompare(db);
+        if (dateComp !== 0) return dateComp;
+        const ta = toEnglishDigits(a.time || '00:00:00');
+        const tb = toEnglishDigits(b.time || '00:00:00');
+        const timeComp = ta.localeCompare(tb);
+        if (timeComp !== 0) return timeComp;
+        return (a.id || '').localeCompare(b.id || '');
+      });
+
+      let runningCash = 0;
+      let runningCopper = 0;
+      let costBasis = 0;
+      let inTransitChecks = 0;
+      let blockedCopper = 0;
+      let totalRealizedProfit = 0;
+
+      for (const tx of custTxs) {
+        const isPending = tx.status === 'pending' || Boolean(tx.checkNumber && tx.status !== 'completed');
+        const kg = Number(tx.amountKg) || 0;
+        let total = Number(tx.totalAmount) || 0;
+        const rate = Number(tx.ratePerKg) || 0;
+
+        if (total <= 0 && kg > 0 && rate > 0 && (tx.type === 'buy' || tx.type === 'sell')) {
+          total = Math.round(kg * rate);
+          tx.totalAmount = total;
+        }
+
+        if (tx.type === 'deposit') {
+          runningCash += total;
+        } else if (tx.type === 'withdraw') {
+          runningCash -= total;
+        } else if (tx.type === 'buy') {
+          runningCash -= total;
+          runningCopper += kg;
+          costBasis += total;
+        } else if (tx.type === 'sell') {
+          const avgBuy = runningCopper > 0 ? (costBasis / runningCopper) : (rate || 0);
+          const profit = Math.max(0, (rate - avgBuy) * kg);
+
+          // Selling copper always decreases the customer copper balance
+          runningCopper = Math.max(0, runningCopper - kg);
+          costBasis = Math.max(0, costBasis - (kg * avgBuy));
+
+          if (isPending) {
+            inTransitChecks += total;
+            blockedCopper += 1;
+          } else {
+            runningCash += total;
+            totalRealizedProfit += profit;
+            tx.profitVal = profit > 0 ? Math.round(profit) : undefined;
+          }
+        } else if (tx.type === 'check_register') {
+          if (isPending) {
+            inTransitChecks += total;
+            blockedCopper += 1;
+          }
+        } else if (tx.type === 'adjustment') {
+          runningCash += total;
+          runningCopper = Math.max(0, runningCopper + kg);
+        }
+
+        // Set the running balance on this transaction exactly like Excel formula
+        tx.afterWalletCash = Math.round(runningCash);
+        tx.afterCopperBalance = Number(runningCopper.toFixed(2));
+
+        txMap.set(tx.id, tx);
+      }
+
+      // Update customer final balances
+      cust.walletCash = Math.round(runningCash);
+      cust.copperBalance = Number(runningCopper.toFixed(2));
+      cust.inTransitChecks = Math.round(inTransitChecks);
+      cust.blockedCopper = blockedCopper;
+      cust.realizedProfit = Math.round(totalRealizedProfit);
+      if (runningCopper > 0 && costBasis > 0) {
+        cust.averageBuyPrice = Math.round(costBasis / runningCopper);
+      }
+
+      custMap.set(custId, cust);
+    }
+
+    // Recalculate share percentage across all customers
+    const updatedCustList = Array.from(custMap.values());
+    const totalCopper = updatedCustList.reduce((acc, c) => acc + (Number(c.copperBalance) || 0), 0);
+    const finalizedCustomers = updatedCustList.map(c => ({
+      ...c,
+      sharePercentage: totalCopper > 0 ? Number(((c.copperBalance / totalCopper) * 100).toFixed(2)) : 0
+    }));
+
+    return {
+      updatedTransactions: Array.from(txMap.values()),
+      updatedCustomers: finalizedCustomers
+    };
   };
 
   // Customer Login action
@@ -904,23 +1030,6 @@ export default function App() {
     const newAvg = (totalOldCost + totalNewCost) / (newWeight || 1);
     const afterCash = currentWallet - totalCost;
 
-    const updatedCustomers = customers.map(c => {
-      if (c.id === client.id) {
-        return {
-          ...c,
-          walletCash: afterCash,
-          copperBalance: newWeight,
-          averageBuyPrice: isNaN(newAvg) ? buyRate : newAvg
-        };
-      }
-      return c;
-    });
-
-    const totalCopper = updatedCustomers.reduce((acc, c) => acc + (Number(c.copperBalance) || 0), 0);
-    const finalized = updatedCustomers.map(c => ({
-      ...c,
-      sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
-    }));
 
     const newTx: Transaction = {
       id: 'tx_' + Date.now(),
@@ -938,14 +1047,14 @@ export default function App() {
     };
 
     const nextTransactions = [newTx, ...transactions];
+    const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
 
-    // Immediate storage persistence
-    localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
-    localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTransactions));
+    localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+    localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
 
     setCompanyWarehouseCopper(prev => prev + kg);
-    setCustomers(finalized);
-    setTransactions(nextTransactions);
+    setCustomers(updatedCustomers);
+    setTransactions(updatedTransactions);
     setActiveModal(null);
   };
 
@@ -994,32 +1103,6 @@ export default function App() {
       const totalRevenue = kg * sellRate;
       const profit = (sellRate - client.averageBuyPrice) * kg;
 
-      // Rule: If check, walletCash does NOT change until check clears. inTransitChecks increases.
-      // If cash, walletCash increases by totalRevenue.
-      const updatedCustomers = customers.map(c => {
-        if (c.id === client.id) {
-          const newWallet = isCheckPayment ? c.walletCash : c.walletCash + totalRevenue;
-          const newChecks = isCheckPayment ? c.inTransitChecks + totalRevenue : c.inTransitChecks;
-          const newBlocked = isCheckPayment ? c.blockedCopper + 1 : c.blockedCopper;
-
-          return {
-            ...c,
-            walletCash: newWallet,
-            inTransitChecks: newChecks,
-            blockedCopper: newBlocked,
-            copperBalance: Number(Math.max(0, c.copperBalance - kg).toFixed(2)),
-            realizedProfit: c.realizedProfit + (profit > 0 ? profit : 0)
-          };
-        }
-        return c;
-      });
-
-      const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
-      const finalized = updatedCustomers.map(c => ({
-        ...c,
-        sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
-      }));
-
       // Detailed transaction description matching options
       let desc = sellDestination === 'internal' 
         ? 'فروش داخلی (تحویل به انبار شرکت مس و اته)' 
@@ -1056,18 +1139,24 @@ export default function App() {
         profitVal: profit > 0 ? profit : undefined
       };
 
-      setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
+      if (sellDestination === 'internal') {
+        setCompanyWarehouseCopper(prev => prev + kg);
+      } else {
+        setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
+      }
 
       const nextTransactions = [newTx, ...transactions];
-      localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
-      localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTransactions));
+      const recalcResult = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
 
-      setCustomers(finalized);
-      setTransactions(nextTransactions);
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(recalcResult.updatedCustomers));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(recalcResult.updatedTransactions));
+
+      setCustomers(recalcResult.updatedCustomers);
+      setTransactions(recalcResult.updatedTransactions);
       setActiveModal(null);
 
       // Immediate Supabase sync
-      supabase.from('customers').upsert(finalized.map(mapCustomerToDb)).then();
+      supabase.from('customers').upsert(recalcResult.updatedCustomers.map(mapCustomerToDb)).then();
       supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
 
       if (isCheckPayment) {
@@ -1200,29 +1289,22 @@ export default function App() {
       ? `${tx.description} | ✅ چک صیاد وصول شد و به کیف پول واریز گردید (${getTodayShamsi()})`
       : `✅ وصول چک صیادی (${getTodayShamsi()})`;
 
-    const updatedCustomers = customers.map(c => {
-      if (c.id === targetCust.id) {
-        return {
-          ...c,
-          walletCash: newWalletCash,
-          inTransitChecks: newInTransitChecks,
-          blockedCopper: newBlockedCopper
-        };
-      }
-      return c;
-    });
-
-    const updatedTransactions = transactions.map(t => {
+    const updatedTransactionsList = transactions.map(t => {
       if (t.id === txId) {
         return {
           ...t,
           status: 'completed' as const,
-          afterWalletCash: newWalletCash,
           description: clearedDesc
         };
       }
       return t;
     });
+
+    const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(
+      updatedTransactionsList,
+      customers,
+      targetCust.id
+    );
 
     localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
     localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
@@ -1234,17 +1316,14 @@ export default function App() {
 
     // Sync to Supabase immediately
     try {
-      await supabase.from('customers').update({
-        wallet_cash: newWalletCash,
-        in_transit_checks: newInTransitChecks,
-        blocked_copper: newBlockedCopper
-      }).eq('id', targetCust.id);
-
-      await supabase.from('transactions').update({
-        status: 'completed',
-        after_wallet_cash: newWalletCash,
-        description: clearedDesc
-      }).eq('id', txId);
+      const custToSync = updatedCustomers.find(c => c.id === targetCust.id);
+      if (custToSync) {
+        await supabase.from('customers').upsert([mapCustomerToDb(custToSync)]);
+      }
+      const custTxsToSync = updatedTransactions.filter(t => t.customerId === targetCust.id);
+      if (custTxsToSync.length > 0) {
+        await supabase.from('transactions').upsert(custTxsToSync.map(mapTransactionToDb));
+      }
     } catch (err) {
       console.error('Error syncing passed check to Supabase:', err);
     }
@@ -1293,13 +1372,6 @@ export default function App() {
       desc += ` | شرح: ${depositDesc.trim()}`;
     }
 
-    setCustomers(customers.map(c => {
-      if (c.id === client.id) {
-        return { ...c, walletCash: c.walletCash + amount };
-      }
-      return c;
-    }));
-
     const txDate = depositDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
 
     const newTx: Transaction = {
@@ -1315,8 +1387,18 @@ export default function App() {
       afterWalletCash: client.walletCash + amount
     };
 
-    setTransactions(prev => [newTx, ...prev]);
+    const nextTransactions = [newTx, ...transactions];
+    const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
+
+    localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+    localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+
+    setCustomers(updatedCustomers);
+    setTransactions(updatedTransactions);
     setActiveModal(null);
+    setDepositAmount('');
+    setDepositTrackingNum('');
+    setDepositDesc('');
   };
 
   // WITHDRAW transaction
@@ -1342,13 +1424,6 @@ export default function App() {
       return;
     }
 
-    setCustomers(customers.map(c => {
-      if (c.id === client.id) {
-        return { ...c, walletCash: c.walletCash - amount };
-      }
-      return c;
-    }));
-
     const txDate = withdrawDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
 
     const newTx: Transaction = {
@@ -1364,8 +1439,17 @@ export default function App() {
       afterWalletCash: client.walletCash - amount
     };
 
-    setTransactions(prev => [newTx, ...prev]);
+    const nextTransactions = [newTx, ...transactions];
+    const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
+
+    localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+    localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+
+    setCustomers(updatedCustomers);
+    setTransactions(updatedTransactions);
     setActiveModal(null);
+    setWithdrawAmount('');
+    setWithdrawDesc('');
   };
 
   // REGISTER CHECK transaction
@@ -1662,75 +1746,39 @@ export default function App() {
         console.warn('Supabase transaction delete warning:', dbDeleteErr);
       }
 
-      // 2. Revert balances if requested
-      let updatedCustomers = [...customers];
+      // 2. Remove transaction from list and recalculate full ledger like Excel
+      const remainingTxs = transactions.filter(t => t.id !== tx.id);
+      let nextCustomers = customers;
+      let nextTxs = remainingTxs;
+
       if (revertTxBalance) {
-        const client = customers.find(c => c.id === tx.customerId);
-        if (client) {
-          let newWalletCash = client.walletCash;
-          let newCopperBalance = client.copperBalance;
-          let newInTransitChecks = client.inTransitChecks;
-          let newBlockedCopper = client.blockedCopper;
-          let newRealizedProfit = client.realizedProfit;
+        // Adjust company warehouse copper
+        if (tx.type === 'buy') {
+          const kg = tx.amountKg || 0;
+          setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
+        } else if (tx.type === 'sell') {
+          const kg = tx.amountKg || 0;
+          setCompanyWarehouseCopper(prev => prev + kg);
+        }
 
-          if (tx.type === 'buy') {
-            const kg = tx.amountKg || 0;
-            newCopperBalance = Math.max(0, newCopperBalance - kg);
-            newWalletCash = newWalletCash + (tx.totalAmount || 0);
-            setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
-          } else if (tx.type === 'sell') {
-            const kg = tx.amountKg || 0;
-            newCopperBalance = newCopperBalance + kg;
-            if (tx.status === 'pending') {
-              newInTransitChecks = Math.max(0, newInTransitChecks - (tx.totalAmount || 0));
-              newBlockedCopper = Math.max(0, newBlockedCopper - 1);
-            } else {
-              newWalletCash = Math.max(0, newWalletCash - (tx.totalAmount || 0));
-              if (tx.profitVal) {
-                newRealizedProfit = Math.max(0, newRealizedProfit - tx.profitVal);
-              }
-            }
-            setCompanyWarehouseCopper(prev => prev + kg);
-          } else if (tx.type === 'deposit') {
-            newWalletCash = Math.max(0, newWalletCash - (tx.totalAmount || 0));
-          } else if (tx.type === 'withdraw') {
-            newWalletCash = newWalletCash + (tx.totalAmount || 0);
-          } else if (tx.type === 'check_register') {
-            newInTransitChecks = Math.max(0, newInTransitChecks - (tx.totalAmount || 0));
-            newBlockedCopper = Math.max(0, newBlockedCopper - 1);
-          }
+        const recalculated = recalculateLedgerForCustomers(remainingTxs, customers, tx.customerId);
+        nextTxs = recalculated.updatedTransactions;
+        nextCustomers = recalculated.updatedCustomers;
 
-          updatedCustomers = customers.map(c => {
-            if (c.id === client.id) {
-              return {
-                ...c,
-                walletCash: Math.round(newWalletCash),
-                copperBalance: Number(newCopperBalance.toFixed(2)),
-                inTransitChecks: Math.round(newInTransitChecks),
-                blockedCopper: newBlockedCopper,
-                realizedProfit: Math.round(newRealizedProfit)
-              };
-            }
-            return c;
-          });
-
-          // Recalculate copper pool shares
-          const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
-          updatedCustomers = updatedCustomers.map(c => ({
-            ...c,
-            sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
-          }));
-
-          setCustomers(updatedCustomers);
-          localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
-          await supabase.from('customers').upsert(updatedCustomers.map(mapCustomerToDb));
+        const custToSync = nextCustomers.find(c => c.id === tx.customerId);
+        if (custToSync) {
+          await supabase.from('customers').upsert([mapCustomerToDb(custToSync)]);
+        }
+        const custTxsToSync = nextTxs.filter(t => t.customerId === tx.customerId);
+        if (custTxsToSync.length > 0) {
+          await supabase.from('transactions').upsert(custTxsToSync.map(mapTransactionToDb));
         }
       }
 
-      // 3. Remove transaction from local state and localStorage
-      const updatedTxs = transactions.filter(t => t.id !== tx.id);
-      setTransactions(updatedTxs);
-      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTxs));
+      setCustomers(nextCustomers);
+      setTransactions(nextTxs);
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(nextCustomers));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTxs));
 
       // Close receipt modal if open with this deleted transaction
       if (selectedTx && selectedTx.id === tx.id) {
@@ -1769,7 +1817,7 @@ export default function App() {
     setEditError('');
   };
 
-  // Confirm Edit Transaction with Supabase, LocalStorage and balance recalculation
+  // Confirm Edit Transaction with Supabase, LocalStorage and Excel-like full ledger recalculation
   const confirmEditTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!txToEdit) return;
@@ -1786,66 +1834,28 @@ export default function App() {
         newTotal = Math.round(newWeight * newRate);
       }
 
-      if (newTotal <= 0) {
+      if (newTotal <= 0 && origTx.type !== 'check_register') {
         setEditError('لطفاً مبلغ کل معتبر وارد کنید.');
         setIsEditingTx(false);
         return;
       }
 
       const oldWeight = origTx.amountKg || 0;
-      const oldTotal = origTx.totalAmount || 0;
       const diffWeight = newWeight - oldWeight;
-      const diffCash = newTotal - oldTotal;
 
-      // Update customer balances based on the delta
-      let updatedCustomers = [...customers];
-      const client = customers.find(c => c.id === origTx.customerId);
-      if (client) {
-        let newWalletCash = client.walletCash;
-        let newCopperBalance = client.copperBalance;
+      // Adjust warehouse copper if buy or sell weight changed
+      if (origTx.type === 'buy' && diffWeight !== 0) {
+        setCompanyWarehouseCopper(prev => Math.max(0, prev + diffWeight));
+      } else if (origTx.type === 'sell' && diffWeight !== 0) {
+        setCompanyWarehouseCopper(prev => Math.max(0, prev - diffWeight));
+      }
 
-        if (origTx.type === 'buy') {
-          // If bought more weight, copper increases, wallet cash decreases
-          newCopperBalance = Math.max(0, newCopperBalance + diffWeight);
-          newWalletCash = newWalletCash - diffCash;
-          setCompanyWarehouseCopper(prev => Math.max(0, prev + diffWeight));
-        } else if (origTx.type === 'sell') {
-          // If sold more weight, copper decreases, wallet cash increases
-          newCopperBalance = Math.max(0, newCopperBalance - diffWeight);
-          if (origTx.status === 'completed') {
-            newWalletCash = newWalletCash + diffCash;
-          }
-          setCompanyWarehouseCopper(prev => Math.max(0, prev - diffWeight));
-        } else if (origTx.type === 'deposit') {
-          newWalletCash = newWalletCash + diffCash;
-        } else if (origTx.type === 'withdraw') {
-          newWalletCash = newWalletCash - diffCash;
-        } else if (origTx.type === 'adjustment') {
-          newCopperBalance = Math.max(0, newCopperBalance + diffWeight);
-          newWalletCash = newWalletCash + diffCash;
-        }
-
-        updatedCustomers = customers.map(c => {
-          if (c.id === client.id) {
-            return {
-              ...c,
-              walletCash: Math.round(newWalletCash),
-              copperBalance: Number(newCopperBalance.toFixed(2))
-            };
-          }
-          return c;
-        });
-
-        // Recalculate share percentage
-        const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
-        updatedCustomers = updatedCustomers.map(c => ({
-          ...c,
-          sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
-        }));
-
-        setCustomers(updatedCustomers);
-        localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
-        await supabase.from('customers').upsert(updatedCustomers.map(mapCustomerToDb));
+      // Update description with new weight & rate if applicable
+      let updatedDesc = editDescInput.trim() || origTx.description;
+      if (origTx.type === 'buy' && newWeight > 0 && newRate > 0 && (!editDescInput || editDescInput.includes('خرید لوله مسی'))) {
+        updatedDesc = `خرید لوله مسی (${formatKg(newWeight)} ک‌گ با نرخ ${formatNumber(newRate)} ت)`;
+      } else if (origTx.type === 'sell' && newWeight > 0 && newRate > 0 && (!editDescInput || editDescInput.includes('فروش'))) {
+        updatedDesc = `فروش مس (${formatKg(newWeight)} ک‌گ با نرخ ${formatNumber(newRate)} ت)`;
       }
 
       // Update the transaction object
@@ -1855,21 +1865,43 @@ export default function App() {
         ratePerKg: newRate > 0 ? newRate : undefined,
         totalAmount: newTotal,
         date: editDateInput || origTx.date,
-        description: editDescInput.trim() || origTx.description,
+        description: updatedDesc,
       };
 
-      const updatedTxs = transactions.map(t => t.id === origTx.id ? updatedTx : t);
-      setTransactions(updatedTxs);
-      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTxs));
-      await supabase.from('transactions').upsert([mapTransactionToDb(updatedTx)]);
+      const txsWithEdit = transactions.map(t => t.id === origTx.id ? updatedTx : t);
+
+      // Recalculate full ledger like Excel formulas
+      const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(
+        txsWithEdit,
+        customers,
+        origTx.customerId
+      );
+
+      setTransactions(updatedTransactions);
+      setCustomers(updatedCustomers);
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+
+      // Sync customer to Supabase
+      const custToSync = updatedCustomers.find(c => c.id === origTx.customerId);
+      if (custToSync) {
+        await supabase.from('customers').upsert([mapCustomerToDb(custToSync)]);
+      }
+
+      // Sync all transactions for this customer to Supabase so after_wallet_cash is stored
+      const custTxsToSync = updatedTransactions.filter(t => t.customerId === origTx.customerId);
+      if (custTxsToSync.length > 0) {
+        await supabase.from('transactions').upsert(custTxsToSync.map(mapTransactionToDb));
+      }
 
       if (selectedTx && selectedTx.id === origTx.id) {
-        setSelectedTx(updatedTx);
+        const fresh = updatedTransactions.find(t => t.id === origTx.id);
+        setSelectedTx(fresh || updatedTx);
       }
 
       setToastMessage({
-        title: 'اصلاح موفقیت‌آمیز سند',
-        desc: `سند معامله اصلاح گردید و تغییرات وزن (${formatKg(newWeight)} ک‌گ) و مبلغ در کاردکس و حساب اعمال شد.`,
+        title: 'اصلاح موفقیت‌آمیز سند به سبک اکسل',
+        desc: `سند اصلاح گردید و مانده ریالی این سطر و تمام ردیف‌های بعد تا بالای کاردکس به صورت خودکار محاسبه و بروز شدند.`,
         type: 'success'
       });
       setTxToEdit(null);
@@ -3315,7 +3347,14 @@ export default function App() {
                               ) : '-'}
                             </td>
                             <td className="py-4 px-4 font-bold font-mono text-slate-800">
-                              {tx.afterWalletCash !== undefined ? `${formatNumber(tx.afterWalletCash)}` : '-'}
+                              <span className="block font-black text-slate-900">
+                                {tx.afterWalletCash !== undefined ? `${formatNumber(tx.afterWalletCash)}` : '-'}
+                              </span>
+                              {tx.afterCopperBalance !== undefined && (
+                                <span className="block text-[10px] text-amber-800 font-mono mt-0.5">
+                                  مس: {formatKg(tx.afterCopperBalance)} ک‌گ
+                                </span>
+                              )}
                             </td>
                             <td className="py-4 px-4">
                               {tx.status === 'pending' ? (
@@ -3738,7 +3777,14 @@ export default function App() {
                           ) : '-'}
                         </td>
                         <td className="py-4 px-4 font-bold font-mono text-slate-800">
-                          {tx.afterWalletCash !== undefined ? `${formatNumber(tx.afterWalletCash)}` : '-'}
+                          <span className="block font-black text-slate-900">
+                            {tx.afterWalletCash !== undefined ? `${formatNumber(tx.afterWalletCash)}` : '-'}
+                          </span>
+                          {tx.afterCopperBalance !== undefined && (
+                            <span className="block text-[10px] text-amber-800 font-mono mt-0.5">
+                              مس: {formatKg(tx.afterCopperBalance)} ک‌گ
+                            </span>
+                          )}
                         </td>
                         <td className="py-4 px-4">
                           {tx.status === 'pending' ? (
@@ -6224,7 +6270,15 @@ export default function App() {
                       type="text"
                       required
                       value={editWeightInput}
-                      onChange={(e) => setEditWeightInput(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditWeightInput(val);
+                        const w = parseCleanWeight(val);
+                        const r = parseCleanNumber(editRateInput);
+                        if (w > 0 && r > 0) {
+                          setEditTotalInput(Math.round(w * r).toLocaleString('en-US'));
+                        }
+                      }}
                       placeholder="مثال: ۵۰ یا ۱۲.۵"
                       className="w-full pl-14 pr-4 py-2.5 bg-white border border-amber-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-center font-black text-sm"
                     />
@@ -6277,6 +6331,10 @@ export default function App() {
                         } else {
                           const num = parseInt(raw, 10);
                           setEditRateInput(num.toLocaleString('en-US'));
+                          const w = parseCleanWeight(editWeightInput);
+                          if (w > 0 && num > 0) {
+                            setEditTotalInput(Math.round(w * num).toLocaleString('en-US'));
+                          }
                         }
                       }}
                       placeholder="مثال: 3,240,000"
@@ -6325,6 +6383,17 @@ export default function App() {
                     {numToPersianWords(parseCleanNumber(editTotalInput))}
                   </div>
                 )}
+              </div>
+
+              {/* Excel Recalculation Notice Banner */}
+              <div className="bg-blue-50/80 border border-blue-200/90 rounded-2xl p-3.5 space-y-1.5 text-right">
+                <div className="flex items-center gap-1.5 text-blue-900 font-extrabold text-xs">
+                  <Calculator className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>بازنگری زنجیره‌ای کاردکس (به سبک اکسل):</span>
+                </div>
+                <p className="text-[11px] text-blue-800 leading-relaxed font-medium">
+                  با ثبت اصلاح این سند، مانده ریالی این سطر و تمام ردیف‌های بعد تا بالای کاردکس، به همراه مانده ریالی کیف پول و وزن مس به صورت خودکار بازنگری و اصلاح خواهند شد.
+                </p>
               </div>
 
               {/* Date field */}
