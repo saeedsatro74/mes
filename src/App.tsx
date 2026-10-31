@@ -40,7 +40,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Eye,
-  EyeOff
+  EyeOff,
+  RefreshCw
 } from 'lucide-react';
 import { supabase, DbCustomer, DbTransaction, DbCompanySettings } from './lib/supabase';
 import { ShamsiDatePicker, toEnglishDigits, toPersianDigits, getTodayShamsi, getOffsetShamsiDate, getPersianDayOfWeek } from './components/ShamsiDatePicker';
@@ -222,18 +223,9 @@ export default function App() {
     if (saved) {
       try {
         const parsed: Customer[] = JSON.parse(saved);
-        return parsed.map(c => {
-          if (c.id === 'c2' && c.copperBalance !== 32.26) {
-            return { ...c, copperBalance: 32.26, sharePercentage: 5.11 };
-          }
-          if (c.id === 'c3' && (c.copperBalance > 120 || c.copperBalance === 502.72 || c.copperBalance === 310.94)) {
-            return { ...c, copperBalance: 119.16, walletCash: 700000000, realizedProfit: 166533274, sharePercentage: 18.87 };
-          }
-          if (c.id === 'c4' && c.copperBalance < 130) {
-            return { ...c, copperBalance: 158.10, walletCash: 16, sharePercentage: 25.03 };
-          }
-          return c;
-        });
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       } catch {
         return INITIAL_CUSTOMERS;
       }
@@ -368,6 +360,10 @@ export default function App() {
   const [editTotalInput, setEditTotalInput] = useState('');
   const [editDescInput, setEditDescInput] = useState('');
   const [editDateInput, setEditDateInput] = useState('');
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+  const [isActionSuccessCheck, setIsActionSuccessCheck] = useState(false);
+  const [isReloadingSite, setIsReloadingSite] = useState(false);
+  const [siteReloadSuccess, setSiteReloadSuccess] = useState(false);
   const [isEditingTx, setIsEditingTx] = useState(false);
   const [editError, setEditError] = useState('');
 
@@ -472,9 +468,9 @@ export default function App() {
         // 1. Fetch Customers
         let initialCusts: Customer[] = INITIAL_CUSTOMERS;
         const { data: custData, error: custErr } = await supabase.from('customers').select('*').order('created_at', { ascending: true });
-        if (!custErr && custData && custData.length >= 4) {
+        if (!custErr && custData && custData.length > 0) {
           initialCusts = custData.map(mapDbCustomer);
-        } else {
+        } else if (!custErr && (!custData || custData.length === 0)) {
           const seedData = INITIAL_CUSTOMERS.map(mapCustomerToDb);
           await supabase.from('customers').upsert(seedData);
           const { data: refreshedCust } = await supabase.from('customers').select('*').order('created_at', { ascending: true });
@@ -486,9 +482,9 @@ export default function App() {
         // 2. Fetch Transactions
         let initialTxs: Transaction[] = INITIAL_TRANSACTIONS;
         const { data: txData, error: txErr } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
-        if (!txErr && txData && txData.length >= 30) {
+        if (!txErr && txData && txData.length > 0) {
           initialTxs = txData.map(mapDbTransaction);
-        } else {
+        } else if (!txErr && (!txData || txData.length === 0)) {
           const seedTxs = INITIAL_TRANSACTIONS.map(mapTransactionToDb);
           await supabase.from('transactions').upsert(seedTxs);
           const { data: refreshedTxs } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
@@ -502,6 +498,8 @@ export default function App() {
         if (isMounted) {
           setCustomers(updatedCustomers);
           setTransactions(updatedTransactions);
+          localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+          localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
         }
 
         // 3. Fetch Company Settings
@@ -807,6 +805,91 @@ export default function App() {
     };
   };
 
+  // Reload and Re-sync complete site data directly from online Supabase database (Requested by User)
+  const handleReloadSiteFromDatabase = async () => {
+    setIsReloadingSite(true);
+    setSiteReloadSuccess(false);
+
+    try {
+      // 1. Live query Customers directly from Supabase
+      const { data: custData, error: custErr } = await supabase
+        .from('customers')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (custErr) throw custErr;
+
+      // 2. Live query Transactions directly from Supabase
+      const { data: txData, error: txErr } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (txErr) throw txErr;
+
+      // 3. Live query Company Settings
+      const { data: settingsData } = await supabase
+        .from('company_settings')
+        .select('*')
+        .eq('id', 1)
+        .single();
+
+      const freshCusts: Customer[] = (custData && custData.length > 0) ? custData.map(mapDbCustomer) : customers;
+      const freshTxs: Transaction[] = (txData && txData.length > 0) ? txData.map(mapDbTransaction) : transactions;
+
+      // Recalculate full ledger chain like Excel formulas
+      const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(freshTxs, freshCusts);
+
+      // Save strictly to local state and local storage
+      setCustomers(updatedCustomers);
+      setTransactions(updatedTransactions);
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+
+      if (settingsData) {
+        if (settingsData.company_warehouse_copper !== undefined) {
+          const wCopper = Number(settingsData.company_warehouse_copper);
+          setCompanyWarehouseCopper(wCopper);
+          localStorage.setItem('vateh_company_warehouse_copper_v5', String(wCopper));
+        }
+        if (settingsData.buy_copper_price !== undefined) {
+          const bPrice = Number(settingsData.buy_copper_price);
+          setBuyCopperPrice(bPrice);
+          localStorage.setItem('vateh_buy_price_v5', String(bPrice));
+        }
+        if (settingsData.sell_copper_price !== undefined) {
+          const sPrice = Number(settingsData.sell_copper_price);
+          setSellCopperPrice(sPrice);
+          localStorage.setItem('vateh_sell_price_v5', String(sPrice));
+        }
+        if (settingsData.admin_password) {
+          setAdminPassword(settingsData.admin_password);
+          localStorage.setItem('vateh_admin_password_v5', settingsData.admin_password);
+        }
+      }
+
+      setSiteReloadSuccess(true);
+      setToastMessage({
+        title: 'همگام‌سازی کامل با پایگاه داده آنلاین ✓',
+        desc: `اطلاعات تمامی حساب‌ها و تراکنش‌ها مستقیماً از دیتابیس Supabase بازخوانی و همگام گردید.`,
+        type: 'success'
+      });
+
+      setTimeout(() => {
+        setSiteReloadSuccess(false);
+      }, 2500);
+    } catch (err) {
+      console.error('Error reloading site from Supabase:', err);
+      setToastMessage({
+        title: 'خطا در ارتباط با دیتابیس',
+        desc: 'دریافت اطلاعات آنلاین با خطا مواجه شد. لطفاً اتصال اینترنت خود را بررسی نمایید.',
+        type: 'error'
+      });
+    } finally {
+      setIsReloadingSite(false);
+    }
+  };
+
   // Customer Login action
   const handleCustomerLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -995,286 +1078,366 @@ export default function App() {
   };
 
   // BUY copper transaction
-  const submitBuyCopper = (e: React.FormEvent) => {
+  const submitBuyCopper = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
+    setIsSubmittingAction(true);
 
-    const activeId = currentUser?.role === 'customer' 
-      ? currentUser.id 
-      : (buyCustomerId || adminSelectedCustomerId || customers[0]?.id);
-
-    const client = customers.find(c => c.id === activeId);
-    if (!client) {
-      setFormError('حساب مشتری مورد نظر برای ثبت خرید یافت نشد.');
-      return;
-    }
-
-    const kg = parseCleanWeight(buyWeight);
-    if (kg <= 0) {
-      setFormError('لطفاً وزن معتبر برای خرید مس وارد کنید.');
-      return;
-    }
-
-    if (buyRate <= 0) {
-      setFormError('لطفاً قیمت هر کیلوگرم مس را وارد کنید.');
-      return;
-    }
-
-    const totalCost = kg * buyRate;
-
-    const currentWallet = Number(client.walletCash) || 0;
-    const currentCopper = Number(client.copperBalance) || 0;
-    const currentAvg = Number(client.averageBuyPrice) || buyRate;
-
-    const newWeight = currentCopper + kg;
-    const totalOldCost = currentCopper * currentAvg;
-    const totalNewCost = kg * buyRate;
-    const newAvg = (totalOldCost + totalNewCost) / (newWeight || 1);
-    const afterCash = currentWallet - totalCost;
-
-
-    const txDate = buyDate || getTodayShamsi();
-
-    const newTx: Transaction = {
-      id: 'tx_' + Date.now(),
-      customerId: client.id,
-      customerName: client.name,
-      type: 'buy',
-      date: txDate,
-      time: new Date().toLocaleTimeString('fa-IR'),
-      amountKg: kg,
-      ratePerKg: buyRate,
-      totalAmount: totalCost,
-      status: 'completed',
-      description: buyDesc.trim() || `خرید لوله مسی (${formatKg(kg)} ک‌گ با نرخ ${formatNumber(buyRate)} ت)`,
-      afterWalletCash: afterCash
-    };
-
-    const nextTransactions = [newTx, ...transactions];
-    const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
-
-    localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
-    localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
-
-    setCompanyWarehouseCopper(prev => prev + kg);
-    setCustomers(updatedCustomers);
-    setTransactions(updatedTransactions);
-    setActiveModal(null);
-
-    // Sync to Supabase
-    supabase.from('customers').upsert(updatedCustomers.map(mapCustomerToDb)).then();
-    supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
-  };
-
-  // SELL copper transaction
-  const submitSellCopper = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError('');
-
-    const kg = parseCleanWeight(sellWeight);
-    if (kg <= 0) {
-      setFormError('لطفاً مقدار معتبر برای وزن مس وارد کنید.');
-      return;
-    }
-
-    if (sellRate <= 0) {
-      setFormError('لطفاً قیمت فروش هر کیلوگرم را وارد کنید.');
-      return;
-    }
-
-    const isCheckPayment = sellPaymentType === 'check';
-    const cleanCheckNum = sellCheckNumber.trim();
-
-    if (isCheckPayment && !cleanCheckNum) {
-      setFormError('لطفاً شناسه یا شماره چک صیادی را وارد نمایید.');
-      return;
-    }
-
-    const txDate = sellDate || getTodayShamsi();
-    const txTime = new Date().toLocaleTimeString('fa-IR');
-
-    if (sellModel === 'individual') {
-      const selectedId = currentUser?.role === 'customer' 
+    try {
+      const activeId = currentUser?.role === 'customer' 
         ? currentUser.id 
-        : (sellSellerId || adminSelectedCustomerId || customers[0]?.id);
-      const client = customers.find(c => c.id === selectedId);
+        : (buyCustomerId || adminSelectedCustomerId || customers[0]?.id);
+
+      const client = customers.find(c => c.id === activeId);
       if (!client) {
-        setFormError('لطفاً طرف حساب فروشنده را انتخاب کنید.');
+        setFormError('حساب مشتری مورد نظر برای ثبت خرید یافت نشد.');
+        setIsSubmittingAction(false);
         return;
       }
 
-      if (client.copperBalance < kg) {
-        setFormError(`موجودی لوله مسی مشتری کافی نیست. موجودی فعلی: ${formatKg(client.copperBalance)} کیلوگرم می‌باشد.`);
+      const kg = parseCleanWeight(buyWeight);
+      if (kg <= 0) {
+        setFormError('لطفاً وزن معتبر برای خرید مس وارد کنید.');
+        setIsSubmittingAction(false);
         return;
       }
 
-      const totalRevenue = kg * sellRate;
-      const profit = (sellRate - client.averageBuyPrice) * kg;
-
-      // Detailed transaction description matching options
-      let desc = sellDestination === 'internal' 
-        ? 'فروش داخلی (تحویل به انبار شرکت مس و اته)' 
-        : `فروش به خارج (خریدار بیرونی: ${externalBuyerName.trim() || 'نامشخص'})`;
-      
-      if (isCheckPayment) {
-        desc += ` | 💳 دریافت چک صیاد: ${cleanCheckNum} (سررسید: ${sellCheckDueDate})${sellCheckBank ? ` - بانک ${sellCheckBank}` : ''} [در انتظار وصول]`;
-      } else {
-        desc += ' | 💵 تسویه نقدی به کیف پول';
+      if (buyRate <= 0) {
+        setFormError('لطفاً قیمت هر کیلوگرم مس را وارد کنید.');
+        setIsSubmittingAction(false);
+        return;
       }
 
-      if (sellResponsible) {
-        desc += ` | مسئول: ${sellResponsible}`;
-      }
+      const totalCost = kg * buyRate;
 
-      if (sellDesc) {
-        desc += ` | شرح: ${sellDesc}`;
-      }
+      const currentWallet = Number(client.walletCash) || 0;
+      const currentCopper = Number(client.copperBalance) || 0;
+      const currentAvg = Number(client.averageBuyPrice) || buyRate;
+
+      const newWeight = currentCopper + kg;
+      const totalOldCost = currentCopper * currentAvg;
+      const totalNewCost = kg * buyRate;
+      const newAvg = (totalOldCost + totalNewCost) / (newWeight || 1);
+      const afterCash = currentWallet - totalCost;
+
+      const txDate = buyDate || getTodayShamsi();
 
       const newTx: Transaction = {
         id: 'tx_' + Date.now(),
         customerId: client.id,
         customerName: client.name,
-        type: 'sell',
+        type: 'buy',
         date: txDate,
-        time: txTime,
+        time: new Date().toLocaleTimeString('fa-IR'),
         amountKg: kg,
-        ratePerKg: sellRate,
-        totalAmount: totalRevenue,
-        status: isCheckPayment ? 'pending' : 'completed',
-        description: desc,
-        checkNumber: isCheckPayment ? cleanCheckNum : undefined,
-        afterWalletCash: isCheckPayment ? client.walletCash : client.walletCash + totalRevenue,
-        profitVal: profit > 0 ? profit : undefined
+        ratePerKg: buyRate,
+        totalAmount: totalCost,
+        status: 'completed',
+        description: buyDesc.trim() || `خرید لوله مسی (${formatKg(kg)} ک‌گ با نرخ ${formatNumber(buyRate)} ت)`,
+        afterWalletCash: afterCash
       };
 
-      if (sellDestination === 'internal') {
-        setCompanyWarehouseCopper(prev => prev + kg);
-      } else {
-        setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
-      }
-
       const nextTransactions = [newTx, ...transactions];
-      const recalcResult = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
+      const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
 
-      localStorage.setItem('vateh_customers_v5', JSON.stringify(recalcResult.updatedCustomers));
-      localStorage.setItem('vateh_transactions_v5', JSON.stringify(recalcResult.updatedTransactions));
-
-      setCustomers(recalcResult.updatedCustomers);
-      setTransactions(recalcResult.updatedTransactions);
-      setActiveModal(null);
-
-      // Immediate Supabase sync
-      supabase.from('customers').upsert(recalcResult.updatedCustomers.map(mapCustomerToDb)).then();
-      supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
-
-      if (isCheckPayment) {
-        setToastMessage({
-          title: 'ثبت فاکتور فروش چکی',
-          desc: `فروش مس با چک صیادی به شماره ${cleanCheckNum} به مبلغ ${formatNumber(totalRevenue)} تومان ثبت گردید. وجه در «اسناد درراه» قرار گرفت و طبق اصول حسابداری تا زمان وصول، موجودی نقدی تغییر نمی‌کند. هر زمان چک پاس شد، می‌توانید از منوی چک‌ها یا جدول، دکمه «تیک پاس شدن» را بزنید.`,
-          type: 'info'
-        });
-      } else {
-        setToastMessage({
-          title: 'ثبت فاکتور فروش نقدی',
-          desc: `فروش مس به مبلغ ${formatNumber(totalRevenue)} تومان با موفقیت ثبت و به موجودی نقدی کیف پول واریز گردید.`,
-          type: 'success'
-        });
+      // 1. Strict await for Supabase sync before updating state & closing modal
+      const custToSync = updatedCustomers.find(c => c.id === client.id);
+      if (custToSync) {
+        const { error: custDbErr } = await supabase.from('customers').upsert([mapCustomerToDb(custToSync)]);
+        if (custDbErr) throw custDbErr;
       }
-    } else {
-      // Bourse / Proportionate sell across all shareholders
-      if (totalCopperPool < kg) {
-        setFormError(`مجموع مس انبار شرکت (${formatKg(totalCopperPool)} کیلوگرم) کمتر از مقدار درخواستی فروش است.`);
+
+      const { error: txDbErr } = await supabase.from('transactions').insert([mapTransactionToDb(newTx)]);
+      if (txDbErr) throw txDbErr;
+
+      // Also upsert company settings for warehouse copper
+      const newWarehouseStock = companyWarehouseCopper + kg;
+      const { error: setDbErr } = await supabase.from('company_settings').upsert({
+        id: 1,
+        company_warehouse_copper: newWarehouseStock,
+        updated_at: new Date().toISOString()
+      });
+      if (setDbErr) throw setDbErr;
+
+      // 2. Show confirmed database checkmark before closing
+      setIsActionSuccessCheck(true);
+      await new Promise(r => setTimeout(r, 750));
+
+      // 3. Update local state & localStorage
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+
+      setCompanyWarehouseCopper(newWarehouseStock);
+      setCustomers(updatedCustomers);
+      setTransactions(updatedTransactions);
+      setActiveModal(null);
+      setIsActionSuccessCheck(false);
+      setBuyWeight('');
+
+      setToastMessage({
+        title: 'ثبت موفق خرید مس ✓',
+        desc: `خرید ${formatKg(kg)} کیلوگرم مس برای «${client.name}» با موفقیت در دیتابیس آنلاین ثبت و تایید شد.`,
+        type: 'success'
+      });
+    } catch (err) {
+      console.error('Error submitting buy transaction to Supabase:', err);
+      setFormError('خطا در ثبت در پایگاه داده آنلاین. اطلاعات در دیتابیس ذخیره نشد. لطفاً اینترنت را بررسی و مجدداً تلاش کنید.');
+    } finally {
+      setIsSubmittingAction(false);
+      setIsActionSuccessCheck(false);
+    }
+  };
+
+  // SELL copper transaction
+  const submitSellCopper = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    setIsSubmittingAction(true);
+
+    try {
+      const kg = parseCleanWeight(sellWeight);
+      if (kg <= 0) {
+        setFormError('لطفاً مقدار معتبر برای وزن مس وارد کنید.');
+        setIsSubmittingAction(false);
         return;
       }
 
-      const totalRevenue = kg * sellRate;
-      const newTxs: Transaction[] = [];
+      if (sellRate <= 0) {
+        setFormError('لطفاً قیمت فروش هر کیلوگرم را وارد کنید.');
+        setIsSubmittingAction(false);
+        return;
+      }
 
-      const updatedCustomers = customers.map(c => {
-        if (c.copperBalance <= 0 || totalCopperPool <= 0) return c;
-        const proportion = c.copperBalance / totalCopperPool;
-        const custKg = kg * proportion;
-        const custRev = totalRevenue * proportion;
-        const profit = (sellRate - c.averageBuyPrice) * custKg;
+      const isCheckPayment = sellPaymentType === 'check';
+      const cleanCheckNum = sellCheckNumber.trim();
 
-        const newWallet = isCheckPayment ? c.walletCash : c.walletCash + custRev;
-        const newChecks = isCheckPayment ? c.inTransitChecks + custRev : c.inTransitChecks;
-        const newBlocked = isCheckPayment ? c.blockedCopper + 1 : c.blockedCopper;
+      if (isCheckPayment && !cleanCheckNum) {
+        setFormError('لطفاً شناسه یا شماره چک صیادی را وارد نمایید.');
+        setIsSubmittingAction(false);
+        return;
+      }
 
-        let desc = `فروش بورسی (سهم متناسب ${c.sharePercentage.toFixed(1)}٪)`;
-        desc += sellDestination === 'internal' 
-          ? ' - تحویل به شرکت' 
-          : ` - خریدار بیرونی: ${externalBuyerName.trim() || 'نامشخص'}`;
+      const txDate = sellDate || getTodayShamsi();
+      const txTime = new Date().toLocaleTimeString('fa-IR');
+
+      if (sellModel === 'individual') {
+        const selectedId = currentUser?.role === 'customer' 
+          ? currentUser.id 
+          : (sellSellerId || adminSelectedCustomerId || customers[0]?.id);
+        const client = customers.find(c => c.id === selectedId);
+        if (!client) {
+          setFormError('لطفاً طرف حساب فروشنده را انتخاب کنید.');
+          setIsSubmittingAction(false);
+          return;
+        }
+
+        if (client.copperBalance < kg) {
+          setFormError(`موجودی لوله مسی مشتری کافی نیست. موجودی فعلی: ${formatKg(client.copperBalance)} کیلوگرم می‌باشد.`);
+          setIsSubmittingAction(false);
+          return;
+        }
+
+        const totalRevenue = kg * sellRate;
+        const profit = (sellRate - client.averageBuyPrice) * kg;
+
+        let desc = sellDestination === 'internal' 
+          ? 'فروش داخلی (تحویل به انبار شرکت مس و اته)' 
+          : `فروش به خارج (خریدار بیرونی: ${externalBuyerName.trim() || 'نامشخص'})`;
         
         if (isCheckPayment) {
-          desc += ` | 💳 دریافت چک صیاد: ${cleanCheckNum} (سررسید: ${sellCheckDueDate}) [در انتظار وصول]`;
+          desc += ` | 💳 دریافت چک صیاد: ${cleanCheckNum} (سررسید: ${sellCheckDueDate})${sellCheckBank ? ` - بانک ${sellCheckBank}` : ''} [در انتظار وصول]`;
         } else {
           desc += ' | 💵 تسویه نقدی به کیف پول';
         }
 
-        if (sellResponsible) desc += ` | مسئول: ${sellResponsible}`;
-        if (sellDesc) desc += ` | ${sellDesc}`;
+        if (sellResponsible) {
+          desc += ` | مسئول: ${sellResponsible}`;
+        }
 
-        newTxs.push({
-          id: 'tx_' + Date.now() + '_' + c.id,
-          customerId: c.id,
-          customerName: c.name,
+        if (sellDesc) {
+          desc += ` | شرح: ${sellDesc}`;
+        }
+
+        const newTx: Transaction = {
+          id: 'tx_' + Date.now(),
+          customerId: client.id,
+          customerName: client.name,
           type: 'sell',
           date: txDate,
           time: txTime,
-          amountKg: custKg,
+          amountKg: kg,
           ratePerKg: sellRate,
-          totalAmount: custRev,
+          totalAmount: totalRevenue,
           status: isCheckPayment ? 'pending' : 'completed',
           description: desc,
           checkNumber: isCheckPayment ? cleanCheckNum : undefined,
-          afterWalletCash: isCheckPayment ? c.walletCash : newWallet,
+          afterWalletCash: isCheckPayment ? client.walletCash : client.walletCash + totalRevenue,
           profitVal: profit > 0 ? profit : undefined
-        });
-
-        return {
-          ...c,
-          walletCash: newWallet,
-          inTransitChecks: newChecks,
-          blockedCopper: newBlocked,
-          copperBalance: Number(Math.max(0, c.copperBalance - custKg).toFixed(2)),
-          realizedProfit: c.realizedProfit + (profit > 0 ? profit : 0)
         };
-      });
 
-      const newTotalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
-      const finalized = updatedCustomers.map(c => ({
-        ...c,
-        sharePercentage: newTotalCopper > 0 ? (c.copperBalance / newTotalCopper) * 100 : 0
-      }));
+        const newWarehouseStock = sellDestination === 'internal' 
+          ? companyWarehouseCopper + kg 
+          : Math.max(0, companyWarehouseCopper - kg);
 
-      setCompanyWarehouseCopper(prev => Math.max(0, prev - kg));
+        const nextTransactions = [newTx, ...transactions];
+        const recalcResult = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
 
-      const nextTransactions = [...newTxs, ...transactions];
-      localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
-      localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTransactions));
+        // Strict await Supabase sync
+        const custToSync = recalcResult.updatedCustomers.find(c => c.id === client.id);
+        if (custToSync) {
+          const { error: cErr } = await supabase.from('customers').upsert([mapCustomerToDb(custToSync)]);
+          if (cErr) throw cErr;
+        }
 
-      setCustomers(finalized);
-      setTransactions(nextTransactions);
-      setActiveModal(null);
+        const { error: tErr } = await supabase.from('transactions').insert([mapTransactionToDb(newTx)]);
+        if (tErr) throw tErr;
 
-      // Immediate Supabase sync
-      supabase.from('customers').upsert(finalized.map(mapCustomerToDb)).then();
-      supabase.from('transactions').insert(newTxs.map(mapTransactionToDb)).then();
-
-      if (isCheckPayment) {
-        setToastMessage({
-          title: 'ثبت فروش بورسی با چک',
-          desc: `فروش بورسی مس با چک صیادی ${cleanCheckNum} به مبلغ ${formatNumber(totalRevenue)} تومان ثبت و در اسناد درراه سهامداران قرار گرفت.`,
-          type: 'info'
+        const { error: setErr } = await supabase.from('company_settings').upsert({
+          id: 1,
+          company_warehouse_copper: newWarehouseStock,
+          updated_at: new Date().toISOString()
         });
+        if (setErr) throw setErr;
+
+        // Show confirmed database checkmark before closing
+        setIsActionSuccessCheck(true);
+        await new Promise(r => setTimeout(r, 750));
+
+        localStorage.setItem('vateh_customers_v5', JSON.stringify(recalcResult.updatedCustomers));
+        localStorage.setItem('vateh_transactions_v5', JSON.stringify(recalcResult.updatedTransactions));
+
+        setCompanyWarehouseCopper(newWarehouseStock);
+        setCustomers(recalcResult.updatedCustomers);
+        setTransactions(recalcResult.updatedTransactions);
+        setActiveModal(null);
+        setIsActionSuccessCheck(false);
+        setSellWeight('');
+
+        if (isCheckPayment) {
+          setToastMessage({
+            title: 'ثبت فاکتور فروش چکی ✓',
+            desc: `فروش مس با چک صیادی به شماره ${cleanCheckNum} به مبلغ ${formatNumber(totalRevenue)} تومان در دیتابیس ثبت و تایید شد.`,
+            type: 'info'
+          });
+        } else {
+          setToastMessage({
+            title: 'ثبت فاکتور فروش نقدی ✓',
+            desc: `فروش مس به مبلغ ${formatNumber(totalRevenue)} تومان با موفقیت در دیتابیس ثبت و تایید گردید.`,
+            type: 'success'
+          });
+        }
       } else {
+        // Bourse sell
+        if (totalCopperPool < kg) {
+          setFormError(`مجموع مس انبار شرکت (${formatKg(totalCopperPool)} کیلوگرم) کمتر از مقدار درخواستی فروش است.`);
+          setIsSubmittingAction(false);
+          return;
+        }
+
+        const totalRevenue = kg * sellRate;
+        const newTxs: Transaction[] = [];
+
+        const updatedCustomers = customers.map(c => {
+          if (c.copperBalance <= 0 || totalCopperPool <= 0) return c;
+          const proportion = c.copperBalance / totalCopperPool;
+          const custKg = kg * proportion;
+          const custRev = totalRevenue * proportion;
+          const profit = (sellRate - c.averageBuyPrice) * custKg;
+
+          const newWallet = isCheckPayment ? c.walletCash : c.walletCash + custRev;
+          const newChecks = isCheckPayment ? c.inTransitChecks + custRev : c.inTransitChecks;
+          const newBlocked = isCheckPayment ? c.blockedCopper + 1 : c.blockedCopper;
+
+          let desc = `فروش بورسی (سهم متناسب ${c.sharePercentage.toFixed(1)}٪)`;
+          desc += sellDestination === 'internal' 
+            ? ' - تحویل به شرکت' 
+            : ` - خریدار بیرونی: ${externalBuyerName.trim() || 'نامشخص'}`;
+          
+          if (isCheckPayment) {
+            desc += ` | 💳 دریافت چک صیاد: ${cleanCheckNum} (سررسید: ${sellCheckDueDate}) [در انتظار وصول]`;
+          } else {
+            desc += ' | 💵 تسویه نقدی به کیف پول';
+          }
+
+          if (sellResponsible) desc += ` | مسئول: ${sellResponsible}`;
+          if (sellDesc) desc += ` | ${sellDesc}`;
+
+          newTxs.push({
+            id: 'tx_' + Date.now() + '_' + c.id,
+            customerId: c.id,
+            customerName: c.name,
+            type: 'sell',
+            date: txDate,
+            time: txTime,
+            amountKg: custKg,
+            ratePerKg: sellRate,
+            totalAmount: custRev,
+            status: isCheckPayment ? 'pending' : 'completed',
+            description: desc,
+            checkNumber: isCheckPayment ? cleanCheckNum : undefined,
+            afterWalletCash: isCheckPayment ? c.walletCash : newWallet,
+            profitVal: profit > 0 ? profit : undefined
+          });
+
+          return {
+            ...c,
+            walletCash: newWallet,
+            inTransitChecks: newChecks,
+            blockedCopper: newBlocked,
+            copperBalance: Number(Math.max(0, c.copperBalance - custKg).toFixed(2)),
+            realizedProfit: c.realizedProfit + (profit > 0 ? profit : 0)
+          };
+        });
+
+        const newTotalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+        const finalized = updatedCustomers.map(c => ({
+          ...c,
+          sharePercentage: newTotalCopper > 0 ? Number(((c.copperBalance / newTotalCopper) * 100).toFixed(2)) : 0
+        }));
+
+        const newWarehouseStock = Math.max(0, companyWarehouseCopper - kg);
+
+        // Strict Supabase await
+        const { error: cErr } = await supabase.from('customers').upsert(finalized.map(mapCustomerToDb));
+        if (cErr) throw cErr;
+
+        const { error: tErr } = await supabase.from('transactions').insert(newTxs.map(mapTransactionToDb));
+        if (tErr) throw tErr;
+
+        const { error: setErr } = await supabase.from('company_settings').upsert({
+          id: 1,
+          company_warehouse_copper: newWarehouseStock,
+          updated_at: new Date().toISOString()
+        });
+        if (setErr) throw setErr;
+
+        // Show confirmed database checkmark before closing
+        setIsActionSuccessCheck(true);
+        await new Promise(r => setTimeout(r, 750));
+
+        setCompanyWarehouseCopper(newWarehouseStock);
+        const nextTransactions = [...newTxs, ...transactions];
+        localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
+        localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTransactions));
+
+        setCustomers(finalized);
+        setTransactions(nextTransactions);
+        setActiveModal(null);
+        setIsActionSuccessCheck(false);
+        setSellWeight('');
+
         setToastMessage({
-          title: 'ثبت فروش بورسی نقدی',
-          desc: `فروش بورسی مس با تسویه نقدی به مبلغ ${formatNumber(totalRevenue)} تومان با موفقیت ثبت گردید.`,
+          title: 'ثبت موفق فروش بورسی ✓',
+          desc: `فروش بورسی مس به مبلغ ${formatNumber(totalRevenue)} تومان با موفقیت در دیتابیس آنلاین ثبت و تایید گردید.`,
           type: 'success'
         });
       }
+    } catch (err) {
+      console.error('Error submitting sell transaction to Supabase:', err);
+      setFormError('خطا در ثبت فروش در پایگاه داده آنلاین. اطلاعات در دیتابیس ثبت نشد. لطفاً اینترنت را بررسی و مجدداً تلاش کنید.');
+    } finally {
+      setIsSubmittingAction(false);
+      setIsActionSuccessCheck(false);
     }
   };
 
@@ -1344,185 +1507,270 @@ export default function App() {
   };
 
   // DEPOSIT transaction
-  const submitDeposit = (e: React.FormEvent) => {
+  const submitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const selectedId = currentUser?.role === 'customer' 
-      ? currentUser.id 
-      : (depositCustomerId || adminSelectedCustomerId || customers[0]?.id);
-    const client = customers.find(c => c.id === selectedId) || customers[0];
-    if (!client) {
-      alert('لطفاً طرف حساب را انتخاب کنید.');
-      return;
+    setIsSubmittingAction(true);
+
+    try {
+      const selectedId = currentUser?.role === 'customer' 
+        ? currentUser.id 
+        : (depositCustomerId || adminSelectedCustomerId || customers[0]?.id);
+      const client = customers.find(c => c.id === selectedId) || customers[0];
+      if (!client) {
+        alert('لطفاً طرف حساب را انتخاب کنید.');
+        setIsSubmittingAction(false);
+        return;
+      }
+
+      const amount = parseCleanNumber(depositAmount);
+      if (amount <= 0) {
+        alert('لطفاً مبلغ معتبر وارد کنید.');
+        setIsSubmittingAction(false);
+        return;
+      }
+
+      const methodName = 
+        depositMethod === 'card' ? 'کارت به کارت / ساتنا و پایا' :
+        depositMethod === 'bank' ? 'واریز مستقیم به حساب جاری شرکت' :
+        depositMethod === 'pos' ? 'کارتخوان (POS) دفتر شرکت' : 'نقدی (صندوق مرکزی شرکت)';
+
+      let desc = `واریز ریالی (${methodName})`;
+      if (depositTrackingNum.trim()) {
+        desc += ` | شماره پیگیری/فیش: ${depositTrackingNum.trim()}`;
+      }
+      if (depositBank && depositMethod !== 'cash') {
+        desc += ` | حساب مقصد: ${depositBank}`;
+      }
+      if (depositResponsible) {
+        desc += ` | مسئول ثبت: ${depositResponsible}`;
+      }
+      if (depositDesc.trim()) {
+        desc += ` | شرح: ${depositDesc.trim()}`;
+      }
+
+      const txDate = depositDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
+
+      const newTx: Transaction = {
+        id: 'tx_' + Date.now(),
+        customerId: client.id,
+        customerName: client.name,
+        type: 'deposit',
+        date: txDate,
+        time: new Date().toLocaleTimeString('fa-IR'),
+        totalAmount: amount,
+        status: 'completed',
+        description: desc,
+        afterWalletCash: client.walletCash + amount
+      };
+
+      const nextTransactions = [newTx, ...transactions];
+      const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
+
+      const custToSync = updatedCustomers.find(c => c.id === client.id);
+      if (custToSync) {
+        const { error: cErr } = await supabase.from('customers').upsert([mapCustomerToDb(custToSync)]);
+        if (cErr) throw cErr;
+      }
+      const { error: tErr } = await supabase.from('transactions').insert([mapTransactionToDb(newTx)]);
+      if (tErr) throw tErr;
+
+      // Show confirmed database checkmark before closing
+      setIsActionSuccessCheck(true);
+      await new Promise(r => setTimeout(r, 750));
+
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+
+      setCustomers(updatedCustomers);
+      setTransactions(updatedTransactions);
+      setActiveModal(null);
+      setIsActionSuccessCheck(false);
+      setDepositAmount('');
+      setDepositTrackingNum('');
+      setDepositDesc('');
+
+      setToastMessage({
+        title: 'ثبت موفق واریز وجه ✓',
+        desc: `واریز مبلغ ${formatNumber(amount)} تومان با موفقیت در دیتابیس آنلاین ثبت و تایید گردید.`,
+        type: 'success'
+      });
+    } catch (err) {
+      console.error('Error submitting deposit to Supabase:', err);
+      alert('خطا در ثبت واریز در پایگاه داده آنلاین. اطلاعات در دیتابیس ذخیره نشد. لطفاً مجدداً تلاش کنید.');
+    } finally {
+      setIsSubmittingAction(false);
+      setIsActionSuccessCheck(false);
     }
-
-    const amount = parseCleanNumber(depositAmount);
-    if (amount <= 0) {
-      alert('لطفاً مبلغ معتبر وارد کنید.');
-      return;
-    }
-
-    const methodName = 
-      depositMethod === 'card' ? 'کارت به کارت / ساتنا و پایا' :
-      depositMethod === 'bank' ? 'واریز مستقیم به حساب جاری شرکت' :
-      depositMethod === 'pos' ? 'کارتخوان (POS) دفتر شرکت' : 'نقدی (صندوق مرکزی شرکت)';
-
-    let desc = `واریز ریالی (${methodName})`;
-    if (depositTrackingNum.trim()) {
-      desc += ` | شماره پیگیری/فیش: ${depositTrackingNum.trim()}`;
-    }
-    if (depositBank && depositMethod !== 'cash') {
-      desc += ` | حساب مقصد: ${depositBank}`;
-    }
-    if (depositResponsible) {
-      desc += ` | مسئول ثبت: ${depositResponsible}`;
-    }
-    if (depositDesc.trim()) {
-      desc += ` | شرح: ${depositDesc.trim()}`;
-    }
-
-    const txDate = depositDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
-
-    const newTx: Transaction = {
-      id: 'tx_' + Date.now(),
-      customerId: client.id,
-      customerName: client.name,
-      type: 'deposit',
-      date: txDate,
-      time: new Date().toLocaleTimeString('fa-IR'),
-      totalAmount: amount,
-      status: 'completed',
-      description: desc,
-      afterWalletCash: client.walletCash + amount
-    };
-
-    const nextTransactions = [newTx, ...transactions];
-    const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
-
-    localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
-    localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
-
-    setCustomers(updatedCustomers);
-    setTransactions(updatedTransactions);
-    setActiveModal(null);
-    setDepositAmount('');
-    setDepositTrackingNum('');
-    setDepositDesc('');
   };
 
   // WITHDRAW transaction
-  const submitWithdraw = (e: React.FormEvent) => {
+  const submitWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
-    const selectedId = currentUser?.role === 'customer' 
-      ? currentUser.id 
-      : (withdrawCustomerId || adminSelectedCustomerId || customers[0]?.id);
-    const client = customers.find(c => c.id === selectedId) || customers[0];
-    if (!client) {
-      alert('لطفاً طرف حساب را انتخاب کنید.');
-      return;
+    setIsSubmittingAction(true);
+    setIsActionSuccessCheck(false);
+
+    try {
+      const selectedId = currentUser?.role === 'customer' 
+        ? currentUser.id 
+        : (withdrawCustomerId || adminSelectedCustomerId || customers[0]?.id);
+      const client = customers.find(c => c.id === selectedId) || customers[0];
+      if (!client) {
+        alert('لطفاً طرف حساب را انتخاب کنید.');
+        setIsSubmittingAction(false);
+        return;
+      }
+
+      const amount = parseCleanNumber(withdrawAmount);
+      if (amount <= 0) {
+        alert('لطفاً مبلغ معتبر وارد کنید.');
+        setIsSubmittingAction(false);
+        return;
+      }
+
+      if (client.walletCash < amount) {
+        alert('موجودی کیف پول ریالی شخص برای این مبلغ برداشت کافی نیست.');
+        setIsSubmittingAction(false);
+        return;
+      }
+
+      const txDate = withdrawDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
+
+      const newTx: Transaction = {
+        id: 'tx_' + Date.now(),
+        customerId: client.id,
+        customerName: client.name,
+        type: 'withdraw',
+        date: txDate,
+        time: new Date().toLocaleTimeString('fa-IR'),
+        totalAmount: amount,
+        status: 'completed',
+        description: withdrawDesc.trim() || 'برداشت وجه از کیف پول و تسویه حساب ریالی',
+        afterWalletCash: client.walletCash - amount
+      };
+
+      const nextTransactions = [newTx, ...transactions];
+      const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
+
+      const custToSync = updatedCustomers.find(c => c.id === client.id);
+      if (custToSync) {
+        const { error: cErr } = await supabase.from('customers').upsert([mapCustomerToDb(custToSync)]);
+        if (cErr) throw cErr;
+      }
+      const { error: tErr } = await supabase.from('transactions').insert([mapTransactionToDb(newTx)]);
+      if (tErr) throw tErr;
+
+      // Show confirmed database checkmark before closing
+      setIsActionSuccessCheck(true);
+      await new Promise(r => setTimeout(r, 750));
+
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+
+      setCustomers(updatedCustomers);
+      setTransactions(updatedTransactions);
+      setActiveModal(null);
+      setIsActionSuccessCheck(false);
+      setWithdrawAmount('');
+      setWithdrawDesc('');
+
+      setToastMessage({
+        title: 'ثبت موفق برداشت وجه ✓',
+        desc: `برداشت مبلغ ${formatNumber(amount)} تومان با موفقیت در دیتابیس آنلاین ثبت و تایید گردید.`,
+        type: 'success'
+      });
+    } catch (err) {
+      console.error('Error submitting withdraw to Supabase:', err);
+      alert('خطا در ثبت برداشت در پایگاه داده آنلاین. اطلاعات در دیتابیس ذخیره نشد. لطفاً مجدداً تلاش کنید.');
+    } finally {
+      setIsSubmittingAction(false);
+      setIsActionSuccessCheck(false);
     }
-
-    const amount = parseCleanNumber(withdrawAmount);
-    if (amount <= 0) {
-      alert('لطفاً مبلغ معتبر وارد کنید.');
-      return;
-    }
-
-    if (client.walletCash < amount) {
-      alert('موجودی کیف پول ریالی شخص برای این مبلغ برداشت کافی نیست.');
-      return;
-    }
-
-    const txDate = withdrawDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
-
-    const newTx: Transaction = {
-      id: 'tx_' + Date.now(),
-      customerId: client.id,
-      customerName: client.name,
-      type: 'withdraw',
-      date: txDate,
-      time: new Date().toLocaleTimeString('fa-IR'),
-      totalAmount: amount,
-      status: 'completed',
-      description: withdrawDesc.trim() || 'برداشت وجه از کیف پول و تسویه حساب ریالی',
-      afterWalletCash: client.walletCash - amount
-    };
-
-    const nextTransactions = [newTx, ...transactions];
-    const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(nextTransactions, customers, client.id);
-
-    localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
-    localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
-
-    setCustomers(updatedCustomers);
-    setTransactions(updatedTransactions);
-    setActiveModal(null);
-    setWithdrawAmount('');
-    setWithdrawDesc('');
   };
 
   // REGISTER CHECK transaction
-  const submitRegisterCheck = (e: React.FormEvent) => {
+  const submitRegisterCheck = async (e: React.FormEvent) => {
     e.preventDefault();
-    const targetId = checkCustomerId || adminSelectedCustomerId || customers[0]?.id;
-    const client = customers.find(c => c.id === targetId) || customers[0];
-    if (!client) {
-      alert('لطفاً حساب مشتری طرف حساب را انتخاب کنید.');
-      return;
-    }
+    setIsSubmittingAction(true);
+    setIsActionSuccessCheck(false);
 
-    const amountVal = parseCleanNumber(checkAmount);
-    if (amountVal <= 0) {
-      alert('لطفاً مبلغ معتبر برای چک صیادی وارد کنید.');
-      return;
-    }
-
-    const cleanCheckNumber = checkNum.trim() || 'ثبت نشده';
-
-    const updated = customers.map(c => {
-      if (c.id === client.id) {
-        return {
-          ...c,
-          inTransitChecks: c.inTransitChecks + amountVal,
-          blockedCopper: c.blockedCopper + 1
-        };
+    try {
+      const targetId = checkCustomerId || adminSelectedCustomerId || customers[0]?.id;
+      const client = customers.find(c => c.id === targetId) || customers[0];
+      if (!client) {
+        alert('لطفاً حساب مشتری طرف حساب را انتخاب کنید.');
+        setIsSubmittingAction(false);
+        return;
       }
-      return c;
-    });
 
-    const newTx: Transaction = {
-      id: 'tx_' + Date.now(),
-      customerId: client.id,
-      customerName: client.name,
-      type: 'check_register',
-      date: getTodayShamsi(),
-      time: new Date().toLocaleTimeString('fa-IR'),
-      totalAmount: amountVal,
-      status: 'pending',
-      description: checkDesc.trim() || `سند اسناد درراه - چک صیادی ${cleanCheckNumber}`,
-      checkNumber: cleanCheckNumber,
-      afterWalletCash: client.walletCash
-    };
+      const amountVal = parseCleanNumber(checkAmount);
+      if (amountVal <= 0) {
+        alert('لطفاً مبلغ معتبر برای چک صیادی وارد کنید.');
+        setIsSubmittingAction(false);
+        return;
+      }
 
-    const nextTxs = [newTx, ...transactions];
-    localStorage.setItem('vateh_customers_v5', JSON.stringify(updated));
-    localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTxs));
+      const cleanCheckNumber = checkNum.trim() || 'ثبت نشده';
 
-    setCustomers(updated);
-    setTransactions(nextTxs);
-    setActiveModal(null);
-    setCheckAmount('');
-    setCheckNum('');
-    setCheckDesc('');
+      const updated = customers.map(c => {
+        if (c.id === client.id) {
+          return {
+            ...c,
+            inTransitChecks: c.inTransitChecks + amountVal,
+            blockedCopper: c.blockedCopper + 1
+          };
+        }
+        return c;
+      });
 
-    // Immediate Supabase sync
-    supabase.from('customers').upsert(updated.map(mapCustomerToDb)).then();
-    supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
+      const newTx: Transaction = {
+        id: 'tx_' + Date.now(),
+        customerId: client.id,
+        customerName: client.name,
+        type: 'check_register',
+        date: getTodayShamsi(),
+        time: new Date().toLocaleTimeString('fa-IR'),
+        totalAmount: amountVal,
+        status: 'pending',
+        description: checkDesc.trim() || `سند اسناد درراه - چک صیادی ${cleanCheckNumber}`,
+        checkNumber: cleanCheckNumber,
+        afterWalletCash: client.walletCash
+      };
 
-    setToastMessage({
-      title: 'ثبت چک صیادی در اسناد درراه',
-      desc: `چک صیادی به شماره ${cleanCheckNumber} به مبلغ ${formatNumber(amountVal)} تومان برای ${client.name} ثبت گردید. وجه در «اسناد درراه» قرار گرفت و تا زمان وصول، موجودی نقدی اضافه نمی‌شود.`,
-      type: 'info'
-    });
+      // Strict await Supabase sync
+      const { error: cErr } = await supabase.from('customers').upsert(updated.map(mapCustomerToDb));
+      if (cErr) throw cErr;
+
+      const { error: tErr } = await supabase.from('transactions').insert([mapTransactionToDb(newTx)]);
+      if (tErr) throw tErr;
+
+      // Show confirmed database checkmark before closing
+      setIsActionSuccessCheck(true);
+      await new Promise(r => setTimeout(r, 750));
+
+      const nextTxs = [newTx, ...transactions];
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(updated));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTxs));
+
+      setCustomers(updated);
+      setTransactions(nextTxs);
+      setActiveModal(null);
+      setIsActionSuccessCheck(false);
+      setCheckAmount('');
+      setCheckNum('');
+      setCheckDesc('');
+
+      setToastMessage({
+        title: 'ثبت چک صیادی در اسناد درراه ✓',
+        desc: `چک صیادی به شماره ${cleanCheckNumber} به مبلغ ${formatNumber(amountVal)} تومان در دیتابیس آنلاین ثبت و تایید گردید.`,
+        type: 'info'
+      });
+    } catch (err) {
+      console.error('Error registering check in Supabase:', err);
+      alert('خطا در ثبت چک در پایگاه داده آنلاین. اطلاعات در دیتابیس ثبت نشد.');
+    } finally {
+      setIsSubmittingAction(false);
+      setIsActionSuccessCheck(false);
+    }
   };
 
   // Helper for applying sell percentage
@@ -1576,133 +1824,148 @@ export default function App() {
   };
 
   // Submit Adjustment / Direct Balance Edit
-  const submitAdjustment = (e: React.FormEvent) => {
+  const submitAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
-    const selectedId = adjustCustomerId || adminSelectedCustomerId;
-    const client = customers.find(c => c.id === selectedId) || customers[0];
-    if (!client) {
-      alert('لطفاً طرف حساب را انتخاب کنید.');
-      return;
-    }
+    setIsSubmittingAction(true);
+    setIsActionSuccessCheck(false);
 
-    const txDate = adjustDate || getTodayShamsi();
-    let finalized: Customer[] = [];
-    let newTx: Transaction;
-
-    if (adjustTypeMode === 'direct') {
-      const targetCash = parseCleanNumber(directCashInput);
-      const targetCopper = parseCleanWeight(directCopperInput);
-
-      const updatedCustomers = customers.map(c => {
-        if (c.id === client.id) {
-          return {
-            ...c,
-            walletCash: targetCash,
-            copperBalance: targetCopper,
-          };
-        }
-        return c;
-      });
-
-      const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
-      finalized = updatedCustomers.map(c => ({
-        ...c,
-        sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
-      }));
-
-      newTx = {
-        id: 'tx_' + Date.now(),
-        customerId: client.id,
-        customerName: client.name,
-        type: 'adjustment',
-        date: txDate,
-        time: new Date().toLocaleTimeString('fa-IR'),
-        amountKg: targetCopper,
-        totalAmount: targetCash,
-        status: 'completed',
-        description: `تنظیم مستقیم موجودی توسط مدیریت - ${adjustReason.trim() || 'ویرایش دستی موجودی‌ها'}`,
-        afterWalletCash: targetCash
-      };
-
-      setToastMessage({
-        title: 'ویرایش مستقیم موجودی با موفقیت انجام شد',
-        desc: `موجودی نقدی «${client.name}» برابر با ${formatNumber(targetCash)} تومان و موجودی لوله مسی برابر با ${formatKg(targetCopper)} کیلوگرم ثبت و در دیتابیس سینک شد.`,
-        type: 'success'
-      });
-    } else {
-      // Relative adjustment (+ / - deltas)
-      const rawCash = parseCleanNumber(adjustCashAmount);
-      const rawCopper = parseCleanWeight(adjustCopperAmount);
-
-      const cashAdjustVal = adjustCashMode === 'increase' ? rawCash : -rawCash;
-      const copperAdjustVal = adjustCopperMode === 'increase' ? rawCopper : -rawCopper;
-
-      if (rawCash === 0 && rawCopper === 0) {
-        alert('لطفاً حداقل یکی از مقادیر تعدیل ریالی یا وزنی را وارد نمایید.');
+    try {
+      const selectedId = adjustCustomerId || adminSelectedCustomerId;
+      const client = customers.find(c => c.id === selectedId) || customers[0];
+      if (!client) {
+        alert('لطفاً طرف حساب را انتخاب کنید.');
+        setIsSubmittingAction(false);
         return;
       }
 
-      if (!adjustReason.trim()) {
-        alert('لطفاً علت اصلاح حساب را به عنوان شرح بنویسید.');
-        return;
+      const txDate = adjustDate || getTodayShamsi();
+      let finalized: Customer[] = [];
+      let newTx: Transaction;
+
+      if (adjustTypeMode === 'direct') {
+        const targetCash = parseCleanNumber(directCashInput);
+        const targetCopper = parseCleanWeight(directCopperInput);
+
+        const updatedCustomers = customers.map(c => {
+          if (c.id === client.id) {
+            return {
+              ...c,
+              walletCash: targetCash,
+              copperBalance: targetCopper,
+            };
+          }
+          return c;
+        });
+
+        const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+        finalized = updatedCustomers.map(c => ({
+          ...c,
+          sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
+        }));
+
+        newTx = {
+          id: 'tx_' + Date.now(),
+          customerId: client.id,
+          customerName: client.name,
+          type: 'adjustment',
+          date: txDate,
+          time: new Date().toLocaleTimeString('fa-IR'),
+          amountKg: targetCopper,
+          totalAmount: targetCash,
+          status: 'completed',
+          description: `تنظیم مستقیم موجودی توسط مدیریت - ${adjustReason.trim() || 'ویرایش دستی موجودی‌ها'}`,
+          afterWalletCash: targetCash
+        };
+      } else {
+        // Relative adjustment (+ / - deltas)
+        const rawCash = parseCleanNumber(adjustCashAmount);
+        const rawCopper = parseCleanWeight(adjustCopperAmount);
+
+        const cashAdjustVal = adjustCashMode === 'increase' ? rawCash : -rawCash;
+        const copperAdjustVal = adjustCopperMode === 'increase' ? rawCopper : -rawCopper;
+
+        if (rawCash === 0 && rawCopper === 0) {
+          alert('لطفاً حداقل یکی از مقادیر تعدیل ریالی یا وزنی را وارد نمایید.');
+          setIsSubmittingAction(false);
+          return;
+        }
+
+        if (!adjustReason.trim()) {
+          alert('لطفاً علت اصلاح حساب را به عنوان شرح بنویسید.');
+          setIsSubmittingAction(false);
+          return;
+        }
+
+        const updatedCustomers = customers.map(c => {
+          if (c.id === client.id) {
+            const newCopperBalance = Math.max(0, c.copperBalance + copperAdjustVal);
+            return {
+              ...c,
+              walletCash: Math.max(0, c.walletCash + cashAdjustVal),
+              copperBalance: newCopperBalance,
+            };
+          }
+          return c;
+        });
+
+        const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
+        finalized = updatedCustomers.map(c => ({
+          ...c,
+          sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
+        }));
+
+        const newCash = Math.max(0, client.walletCash + cashAdjustVal);
+
+        newTx = {
+          id: 'tx_' + Date.now(),
+          customerId: client.id,
+          customerName: client.name,
+          type: 'adjustment',
+          date: txDate,
+          time: new Date().toLocaleTimeString('fa-IR'),
+          amountKg: copperAdjustVal !== 0 ? copperAdjustVal : undefined,
+          totalAmount: cashAdjustVal,
+          status: 'completed',
+          description: `سند اصلاح حساب و تعدیل موجودی - ${adjustReason.trim()}`,
+          afterWalletCash: newCash
+        };
       }
 
-      const updatedCustomers = customers.map(c => {
-        if (c.id === client.id) {
-          const newCopperBalance = Math.max(0, c.copperBalance + copperAdjustVal);
-          return {
-            ...c,
-            walletCash: Math.max(0, c.walletCash + cashAdjustVal),
-            copperBalance: newCopperBalance,
-          };
-        }
-        return c;
-      });
+      // 1. Strict await Supabase sync before confirming
+      const { error: cErr } = await supabase.from('customers').upsert(finalized.map(mapCustomerToDb));
+      if (cErr) throw cErr;
 
-      const totalCopper = updatedCustomers.reduce((acc, c) => acc + c.copperBalance, 0);
-      finalized = updatedCustomers.map(c => ({
-        ...c,
-        sharePercentage: totalCopper > 0 ? (c.copperBalance / totalCopper) * 100 : 0
-      }));
+      const { error: tErr } = await supabase.from('transactions').insert([mapTransactionToDb(newTx)]);
+      if (tErr) throw tErr;
 
-      const newCash = Math.max(0, client.walletCash + cashAdjustVal);
+      // 2. Show confirmed database checkmark before closing
+      setIsActionSuccessCheck(true);
+      await new Promise(r => setTimeout(r, 750));
 
-      newTx = {
-        id: 'tx_' + Date.now(),
-        customerId: client.id,
-        customerName: client.name,
-        type: 'adjustment',
-        date: txDate,
-        time: new Date().toLocaleTimeString('fa-IR'),
-        amountKg: copperAdjustVal !== 0 ? copperAdjustVal : undefined,
-        totalAmount: cashAdjustVal,
-        status: 'completed',
-        description: `سند اصلاح حساب و تعدیل موجودی - ${adjustReason.trim()}`,
-        afterWalletCash: newCash
-      };
+      const nextTxs = [newTx, ...transactions];
+      localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
+      localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTxs));
+
+      setCustomers(finalized);
+      setTransactions(nextTxs);
+      setActiveModal(null);
+      setIsActionSuccessCheck(false);
+      setAdjustCashAmount('');
+      setAdjustCopperAmount('');
+      setAdjustReason('');
 
       setToastMessage({
-        title: 'ثبت سند اصلاح حساب',
-        desc: `تعدیل موجودی حساب «${client.name}» با موفقیت اعمال و در دیتابیس ثبت گردید.`,
+        title: 'ویرایش مستقیم موجودی با موفقیت در دیتابیس ثبت شد ✓',
+        desc: `موجودی‌های جدید «${client.name}» با موفقیت در دیتابیس آنلاین ثبت و تایید گردید.`,
         type: 'success'
       });
+    } catch (err) {
+      console.error('Error submitting adjustment to Supabase:', err);
+      alert('خطا در ثبت تعدیل در پایگاه داده آنلاین. اطلاعات در دیتابیس ذخیره نشد.');
+    } finally {
+      setIsSubmittingAction(false);
+      setIsActionSuccessCheck(false);
     }
-
-    const nextTxs = [newTx, ...transactions];
-    localStorage.setItem('vateh_customers_v5', JSON.stringify(finalized));
-    localStorage.setItem('vateh_transactions_v5', JSON.stringify(nextTxs));
-
-    setCustomers(finalized);
-    setTransactions(nextTxs);
-
-    // Sync to Supabase
-    supabase.from('customers').upsert(finalized.map(mapCustomerToDb)).then();
-    supabase.from('transactions').insert([mapTransactionToDb(newTx)]).then();
-
-    setAdjustCashAmount('');
-    setAdjustCopperAmount('');
-    setAdjustReason('');
-    setActiveModal(null);
   };
 
   // Confirm Delete Customer profile with full Supabase & LocalStorage sync
@@ -1907,17 +2170,23 @@ export default function App() {
         setSelectedTx(fresh || updatedTx);
       }
 
+      // Show confirmed database checkmark before closing
+      setIsActionSuccessCheck(true);
+      await new Promise(r => setTimeout(r, 750));
+
       setToastMessage({
-        title: 'اصلاح موفقیت‌آمیز سند به سبک اکسل',
-        desc: `سند اصلاح گردید و مانده ریالی این سطر و تمام ردیف‌های بعد تا بالای کاردکس به صورت خودکار محاسبه و بروز شدند.`,
+        title: 'اصلاح موفقیت‌آمیز سند به سبک اکسل ✓',
+        desc: `سند اصلاح گردید و تمامی تغییرات در دیتابیس آنلاین ثبت و مانده‌ها بازنگری شدند.`,
         type: 'success'
       });
       setTxToEdit(null);
+      setIsActionSuccessCheck(false);
     } catch (err) {
       console.error('Error editing transaction:', err);
-      setEditError('خطایی در ثبت اصلاحات رخ داد.');
+      setEditError('خطایی در ثبت اصلاحات در دیتابیس آنلاین رخ داد.');
     } finally {
       setIsEditingTx(false);
+      setIsActionSuccessCheck(false);
     }
   };
 
@@ -2871,6 +3140,17 @@ export default function App() {
           >
             <Lock className="w-4 h-4 text-amber-600" />
             <span className="hidden sm:inline text-[10px] font-bold text-slate-700">تغییر رمز</span>
+          </button>
+
+          {/* Reload / Refresh Entire Page and Site (Reload this page) */}
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            title="ریلود و رفرش کامل کل سایت (Reload this page)"
+            className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-800 text-slate-800 transition flex items-center gap-1.5 cursor-pointer shrink-0 font-extrabold text-[10px] md:text-xs shadow-2xs active:scale-95"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+            <span>رفرش سایت</span>
           </button>
 
           <button
@@ -4071,9 +4351,28 @@ export default function App() {
               <div className="pt-2 flex gap-2">
                 <button
                   type="submit"
-                  className="flex-1 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-black py-3 rounded-xl transition duration-150 text-xs shadow-md shadow-amber-600/10 cursor-pointer"
+                  disabled={isSubmittingAction || isActionSuccessCheck}
+                  className={`flex-1 font-black py-3 rounded-xl transition duration-150 text-xs shadow-md cursor-pointer disabled:opacity-90 flex items-center justify-center gap-2 ${
+                    isActionSuccessCheck
+                      ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                      : isSubmittingAction
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 shadow-amber-600/10'
+                  }`}
                 >
-                  ثبت فاکتور خرید
+                  {isActionSuccessCheck ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                      <span>ثبت در دیتابیس تایید شد ✓</span>
+                    </>
+                  ) : isSubmittingAction ? (
+                    <>
+                      <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                      <span>در حال ثبت در پایگاه داده...</span>
+                    </>
+                  ) : (
+                    <span>ثبت فاکتور خرید</span>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -4444,9 +4743,28 @@ export default function App() {
                   <div className="pt-2 flex gap-2">
                     <button
                       type="submit"
-                      className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-black py-3 rounded-xl transition duration-150 text-xs shadow-md shadow-emerald-600/10 cursor-pointer"
+                      disabled={isSubmittingAction || isActionSuccessCheck}
+                      className={`flex-1 font-black py-3 rounded-xl transition duration-150 text-xs shadow-md cursor-pointer disabled:opacity-90 flex items-center justify-center gap-2 ${
+                        isActionSuccessCheck
+                          ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                          : isSubmittingAction
+                            ? 'bg-emerald-700 text-white'
+                            : 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-emerald-600/10'
+                      }`}
                     >
-                      ثبت فاکتور فروش
+                      {isActionSuccessCheck ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                          <span>ثبت در دیتابیس تایید شد ✓</span>
+                        </>
+                      ) : isSubmittingAction ? (
+                        <>
+                          <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                          <span>در حال ثبت در پایگاه داده...</span>
+                        </>
+                      ) : (
+                        <span>ثبت فاکتور فروش</span>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -4637,10 +4955,31 @@ export default function App() {
                   <div className="pt-2 flex gap-2.5">
                     <button
                       type="submit"
-                      className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-black py-3.5 px-6 rounded-xl transition duration-150 text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                      disabled={isSubmittingAction || isActionSuccessCheck}
+                      className={`flex-1 font-black py-3.5 px-6 rounded-xl transition duration-150 text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-90 ${
+                        isActionSuccessCheck
+                          ? 'bg-emerald-600 text-white'
+                          : isSubmittingAction
+                            ? 'bg-indigo-900 text-white'
+                            : 'bg-slate-900 hover:bg-slate-800 text-white'
+                      }`}
                     >
-                      <CreditCard className="w-4 h-4 text-indigo-400" />
-                      <span>ثبت چک صیادی و مسدود مس</span>
+                      {isActionSuccessCheck ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                          <span>ثبت در دیتابیس تایید شد ✓</span>
+                        </>
+                      ) : isSubmittingAction ? (
+                        <>
+                          <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                          <span>در حال ثبت در پایگاه داده...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard className="w-4 h-4 text-indigo-400" />
+                          <span>ثبت چک صیادی و مسدود مس</span>
+                        </>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -4759,9 +5098,28 @@ export default function App() {
                   <div className="pt-2 flex gap-2">
                     <button
                       type="submit"
-                      className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-black py-3 rounded-xl transition duration-150 text-xs shadow-md shadow-emerald-600/10 cursor-pointer"
+                      disabled={isSubmittingAction || isActionSuccessCheck}
+                      className={`flex-1 font-black py-3 rounded-xl transition duration-150 text-xs shadow-md cursor-pointer disabled:opacity-90 flex items-center justify-center gap-2 ${
+                        isActionSuccessCheck
+                          ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                          : isSubmittingAction
+                            ? 'bg-emerald-700 text-white'
+                            : 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-emerald-600/10'
+                      }`}
                     >
-                      ثبت واریز وجه
+                      {isActionSuccessCheck ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                          <span>ثبت در دیتابیس تایید شد ✓</span>
+                        </>
+                      ) : isSubmittingAction ? (
+                        <>
+                          <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                          <span>در حال ثبت در پایگاه داده...</span>
+                        </>
+                      ) : (
+                        <span>ثبت واریز وجه</span>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -4898,9 +5256,28 @@ export default function App() {
                   <div className="pt-2 flex gap-2">
                     <button
                       type="submit"
-                      className="flex-1 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white font-black py-3 rounded-xl transition duration-150 text-xs shadow-md shadow-rose-600/10 cursor-pointer"
+                      disabled={isSubmittingAction || isActionSuccessCheck}
+                      className={`flex-1 font-black py-3 rounded-xl transition duration-150 text-xs shadow-md cursor-pointer disabled:opacity-90 flex items-center justify-center gap-2 ${
+                        isActionSuccessCheck
+                          ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                          : isSubmittingAction
+                            ? 'bg-rose-700 text-white'
+                            : 'bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white shadow-rose-600/10'
+                      }`}
                     >
-                      ثبت برداشت وجه
+                      {isActionSuccessCheck ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                          <span>ثبت در دیتابیس تایید شد ✓</span>
+                        </>
+                      ) : isSubmittingAction ? (
+                        <>
+                          <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                          <span>در حال ثبت در پایگاه داده...</span>
+                        </>
+                      ) : (
+                        <span>ثبت برداشت وجه</span>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -5434,10 +5811,31 @@ export default function App() {
                   <div className="pt-2 flex gap-2.5">
                     <button
                       type="submit"
-                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-3.5 px-6 rounded-xl transition duration-150 text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                      disabled={isSubmittingAction || isActionSuccessCheck}
+                      className={`flex-1 font-black py-3.5 px-6 rounded-xl transition duration-150 text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-90 ${
+                        isActionSuccessCheck
+                          ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                          : isSubmittingAction
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-amber-500/10'
+                      }`}
                     >
-                      <Sliders className="w-4 h-4" />
-                      <span>{adjustTypeMode === 'direct' ? 'ثبت و اعمال مستقیم موجودی‌های جدید' : 'ثبت سند اصلاح حساب'}</span>
+                      {isActionSuccessCheck ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                          <span>ثبت در دیتابیس تایید شد ✓</span>
+                        </>
+                      ) : isSubmittingAction ? (
+                        <>
+                          <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                          <span>در حال ثبت در پایگاه داده...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sliders className="w-4 h-4" />
+                          <span>{adjustTypeMode === 'direct' ? 'ثبت و اعمال مستقیم موجودی‌های جدید' : 'ثبت سند اصلاح حساب'}</span>
+                        </>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -6459,11 +6857,31 @@ export default function App() {
               <div className="pt-2 flex gap-2">
                 <button
                   type="submit"
-                  disabled={isEditingTx}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black py-3 px-4 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                  disabled={isEditingTx || isActionSuccessCheck}
+                  className={`flex-1 font-black py-3 px-4 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-90 ${
+                    isActionSuccessCheck
+                      ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                      : isEditingTx
+                        ? 'bg-blue-800 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
                 >
-                  <Edit2 className="w-4 h-4" />
-                  <span>{isEditingTx ? 'در حال ثبت در دیتابیس...' : 'ثبت اصلاحات سند'}</span>
+                  {isActionSuccessCheck ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                      <span>اصلاح در دیتابیس تایید شد ✓</span>
+                    </>
+                  ) : isEditingTx ? (
+                    <>
+                      <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                      <span>در حال ثبت اصلاحات در دیتابیس...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Edit2 className="w-4 h-4" />
+                      <span>ثبت اصلاحات سند</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"
