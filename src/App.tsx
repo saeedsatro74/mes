@@ -768,7 +768,7 @@ export default function App() {
           }
         } else if (tx.type === 'adjustment') {
           runningCash += total;
-          runningCopper = Math.max(0, runningCopper + kg);
+          runningCopper += kg;
         }
 
         // Set the running balance on this transaction exactly like Excel formula
@@ -3418,8 +3418,11 @@ export default function App() {
                               )}
                             </td>
 
-                            <td className="py-4 px-4 font-bold font-mono text-slate-900">
-                              {formatKg(cust.copperBalance)}
+                            <td className={`py-4 px-4 font-bold font-mono ${cust.copperBalance < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                              <span className="block">{formatKg(cust.copperBalance)}</span>
+                              {cust.copperBalance < 0 && (
+                                <span className="text-[9px] text-rose-500 font-sans font-bold block">بدهکار مس</span>
+                              )}
                             </td>
 
                             <td className="py-4 px-4 font-bold font-mono text-slate-500">
@@ -3799,10 +3802,17 @@ export default function App() {
 
               <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
                 <span className="text-[10px] text-slate-500 block">موجودی لوله مسی (ک‌گ)</span>
-                <span className="text-sm font-black text-amber-800 font-mono block">
+                <span className={`text-sm font-black font-mono block ${activeProfile.copperBalance < 0 ? 'text-rose-600' : 'text-amber-800'}`}>
                   {formatKg(activeProfile.copperBalance)}
+                  {activeProfile.copperBalance < 0 && (
+                    <span className="text-[9px] mr-1 text-rose-500 font-sans font-bold">(بدهکار مس)</span>
+                  )}
                 </span>
-                <span className="text-[9px] text-slate-400 block">ارزش روز: {formatNumber(activeProfile.copperBalance * buyCopperPrice)} ت</span>
+                <span className="text-[9px] text-slate-400 block">
+                  {activeProfile.copperBalance < 0
+                    ? `بدهی ارزش روز: ${formatNumber(Math.abs(activeProfile.copperBalance) * buyCopperPrice)} ت`
+                    : `ارزش روز: ${formatNumber(activeProfile.copperBalance * buyCopperPrice)} ت`}
+                </span>
               </div>
 
               <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm text-right space-y-1">
@@ -4668,6 +4678,19 @@ export default function App() {
                           وزن واردشده: {formatKg(parseCleanWeight(sellWeight))} کیلوگرم
                         </div>
                       )}
+                      {/* Quick weight chips */}
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {['10', '25', '50', '100', '200', '350'].map(val => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setSellWeight(val)}
+                            className="text-[10px] bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 px-2 py-0.5 rounded-lg font-mono font-bold transition border border-slate-200/60 cursor-pointer"
+                          >
+                            {toPersianDigits(val)} ک‌گ
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     {/* قیمت هر کیلو */}
@@ -4711,8 +4734,11 @@ export default function App() {
 
                     <div className="flex justify-between items-center text-xs border-t border-slate-800/80 pt-2">
                       <span className="text-slate-400 font-medium">مانده مس پس از فروش:</span>
-                      <span className={`font-mono font-bold ${remainingCopper < 0 ? 'text-red-400' : 'text-slate-200'}`}>
-                        {formatKg(Math.max(0, remainingCopper))} کیلوگرم
+                      <span className={`font-mono font-bold ${remainingCopper < 0 ? 'text-rose-400' : 'text-slate-200'}`}>
+                        {formatKg(remainingCopper)} کیلوگرم
+                        {remainingCopper < 0 && (
+                          <span className="text-[10px] mr-1 text-rose-300 font-sans">(بدهکار مس)</span>
+                        )}
                       </span>
                     </div>
 
@@ -4725,10 +4751,10 @@ export default function App() {
                       </div>
                     )}
 
-                    {sellerCopper < numericWeight && (
-                      <div className="p-2.5 rounded-xl bg-red-950/50 border border-red-800/40 text-red-300 text-xs flex items-center gap-2 font-bold">
-                        <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                        <span>موجودی مس ({formatKg(sellerCopper)} ک‌گ) برای این فروش کافی نیست!</span>
+                    {remainingCopper < 0 && (
+                      <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-800/40 text-amber-300 text-xs flex items-center gap-2 font-bold">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                        <span>توجه: مقدار فروش بیشتر از موجودی مس فعلی است (موجودی پس از ثبت به {formatKg(remainingCopper)} کیلوگرم منفی خواهد شد - فروش مجاز است).</span>
                       </div>
                     )}
                   </div>
