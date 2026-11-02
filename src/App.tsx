@@ -750,7 +750,7 @@ export default function App() {
           const profit = Math.max(0, (rate - avgBuy) * kg);
 
           // Selling copper always decreases the customer copper balance
-          runningCopper = Math.max(0, runningCopper - kg);
+          runningCopper -= kg;
           costBasis = Math.max(0, costBasis - (kg * avgBuy));
 
           if (isPending) {
@@ -1231,12 +1231,6 @@ export default function App() {
           return;
         }
 
-        if (client.copperBalance < kg) {
-          setFormError(`موجودی لوله مسی مشتری کافی نیست. موجودی فعلی: ${formatKg(client.copperBalance)} کیلوگرم می‌باشد.`);
-          setIsSubmittingAction(false);
-          return;
-        }
-
         const totalRevenue = kg * sellRate;
         const profit = (sellRate - client.averageBuyPrice) * kg;
 
@@ -1384,7 +1378,7 @@ export default function App() {
             walletCash: newWallet,
             inTransitChecks: newChecks,
             blockedCopper: newBlocked,
-            copperBalance: Number(Math.max(0, c.copperBalance - custKg).toFixed(2)),
+            copperBalance: Number((c.copperBalance - custKg).toFixed(2)),
             realizedProfit: c.realizedProfit + (profit > 0 ? profit : 0)
           };
         });
@@ -1898,10 +1892,10 @@ export default function App() {
 
         const updatedCustomers = customers.map(c => {
           if (c.id === client.id) {
-            const newCopperBalance = Math.max(0, c.copperBalance + copperAdjustVal);
+            const newCopperBalance = c.copperBalance + copperAdjustVal;
             return {
               ...c,
-              walletCash: Math.max(0, c.walletCash + cashAdjustVal),
+              walletCash: c.walletCash + cashAdjustVal,
               copperBalance: newCopperBalance,
             };
           }
