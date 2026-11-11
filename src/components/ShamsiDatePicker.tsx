@@ -15,6 +15,25 @@ export const toPersianDigits = (str: string | number | null | undefined): string
     .replace(/[٠-٩]/g, d => '۰۱۲۳۴۵۶۷۸۹'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
 };
 
+export const normalizeShamsiDate = (dateStr: string | null | undefined): string => {
+  if (!dateStr) return '';
+  const clean = toEnglishDigits(dateStr).trim().replace(/[^0-9/]/g, '');
+  const parts = clean.split('/').filter(Boolean);
+  if (parts.length === 3) {
+    const y = parts[0].padStart(4, '1405');
+    const m = parts[1].padStart(2, '0');
+    const d = parts[2].padStart(2, '0');
+    return `${y}/${m}/${d}`;
+  }
+  return clean;
+};
+
+export const compareShamsiDates = (dateA: string | null | undefined, dateB: string | null | undefined): number => {
+  const normA = normalizeShamsiDate(dateA);
+  const normB = normalizeShamsiDate(dateB);
+  return normA.localeCompare(normB);
+};
+
 export const getTodayShamsi = (): string => {
   try {
     const parts = new Intl.DateTimeFormat('fa-IR-u-nu-latn', {
@@ -214,6 +233,11 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
           required={required}
           value={toPersianDigits(value)}
           onChange={handleInputChange}
+          onBlur={() => {
+            if (value) {
+              onChange(normalizeShamsiDate(value));
+            }
+          }}
           placeholder="۱۴۰۵/۰۷/۱۱"
           className={`w-full py-2.5 px-10 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-center text-slate-900 focus:outline-none focus:ring-2 ${ringFocus} transition shadow-sm`}
         />

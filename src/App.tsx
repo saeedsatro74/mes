@@ -44,7 +44,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { supabase, DbCustomer, DbTransaction, DbCompanySettings } from './lib/supabase';
-import { ShamsiDatePicker, toEnglishDigits, toPersianDigits, getTodayShamsi, getOffsetShamsiDate, getPersianDayOfWeek } from './components/ShamsiDatePicker';
+import { ShamsiDatePicker, toEnglishDigits, toPersianDigits, getTodayShamsi, getOffsetShamsiDate, getPersianDayOfWeek, normalizeShamsiDate, compareShamsiDates } from './components/ShamsiDatePicker';
 import { WattehLogo } from './components/WattehLogo';
 
 // Core Interfaces
@@ -430,7 +430,7 @@ export default function App() {
     customerId: t.customer_id,
     customerName: t.customer_name,
     type: t.type as any,
-    date: t.date,
+    date: normalizeShamsiDate(t.date),
     time: t.time || '۰۹:۰۰:۰۰',
     amountKg: t.amount_kg !== null && t.amount_kg !== undefined ? Number(t.amount_kg) : undefined,
     ratePerKg: t.rate_per_kg !== null && t.rate_per_kg !== undefined ? Number(t.rate_per_kg) : undefined,
@@ -447,7 +447,7 @@ export default function App() {
     customer_id: t.customerId,
     customer_name: t.customerName,
     type: t.type,
-    date: t.date,
+    date: normalizeShamsiDate(t.date),
     time: t.time,
     amount_kg: t.amountKg,
     rate_per_kg: t.ratePerKg,
@@ -493,13 +493,21 @@ export default function App() {
           }
         }
 
-        // 3. Calibrate full ledger like Excel so every transaction's afterWalletCash is accurate
+        // 3. Calibrate full ledger like Excel so every transaction's afterWalletCash and profit are accurate
         const { updatedTransactions, updatedCustomers } = recalculateLedgerForCustomers(initialTxs, initialCusts);
         if (isMounted) {
           setCustomers(updatedCustomers);
           setTransactions(updatedTransactions);
           localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
           localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+        }
+
+        // Sync calibrated records (normalized dates & accurate profits) to Supabase in background
+        try {
+          await supabase.from('customers').upsert(updatedCustomers.map(mapCustomerToDb));
+          await supabase.from('transactions').upsert(updatedTransactions.map(mapTransactionToDb));
+        } catch (syncNotice) {
+          console.log('Background DB calibration sync notice:', syncNotice);
         }
 
         // 3. Fetch Company Settings
@@ -706,10 +714,14 @@ export default function App() {
       // Extract all transactions for this customer
       const custTxs = Array.from(txMap.values()).filter(t => t.customerId === custId);
 
-      // Sort strictly chronologically (earliest date and time to latest)
+      // Normalize dates and sort strictly chronologically (earliest date and time to latest)
+      for (const t of custTxs) {
+        t.date = normalizeShamsiDate(t.date);
+      }
+
       custTxs.sort((a, b) => {
-        const da = toEnglishDigits(a.date || '');
-        const db = toEnglishDigits(b.date || '');
+        const da = normalizeShamsiDate(a.date);
+        const db = normalizeShamsiDate(b.date);
         const dateComp = da.localeCompare(db);
         if (dateComp !== 0) return dateComp;
         const ta = toEnglishDigits(a.time || '00:00:00');
@@ -725,6 +737,7 @@ export default function App() {
       let inTransitChecks = 0;
       let blockedCopper = 0;
       let totalRealizedProfit = 0;
+      let lastKnownBuyRate = cust.averageBuyPrice || buyCopperPrice || 0;
 
       for (const tx of custTxs) {
         const isPending = tx.status === 'pending' || Boolean(tx.checkNumber && tx.status !== 'completed');
@@ -745,21 +758,48 @@ export default function App() {
           runningCash -= total;
           runningCopper += kg;
           costBasis += total;
+          if (rate > 0) {
+            lastKnownBuyRate = rate;
+          }
         } else if (tx.type === 'sell') {
-          const avgBuy = runningCopper > 0 ? (costBasis / runningCopper) : (rate || 0);
-          const profit = Math.max(0, (rate - avgBuy) * kg);
+          // Determine accurate purchase cost:
+          // 1. If runningCopper > 0 and costBasis > 0, avg is costBasis / runningCopper
+          // 2. Otherwise use last known purchase rate
+          // 3. Otherwise use customer's registered average buy price
+          // 4. Otherwise use company market buy price
+          let avgBuy = 0;
+          if (runningCopper > 0 && costBasis > 0) {
+            avgBuy = costBasis / runningCopper;
+          } else if (lastKnownBuyRate > 0) {
+            avgBuy = lastKnownBuyRate;
+          } else if (cust.averageBuyPrice > 0) {
+            avgBuy = cust.averageBuyPrice;
+          } else if (buyCopperPrice > 0) {
+            avgBuy = buyCopperPrice;
+          }
 
-          // Selling copper always decreases the customer copper balance
+          let profit = 0;
+          if (avgBuy > 0 && rate > avgBuy) {
+            profit = Math.round((rate - avgBuy) * kg);
+          } else if (tx.profitVal && tx.profitVal > 0) {
+            profit = tx.profitVal;
+          }
+
+          // Selling copper decreases customer copper balance
           runningCopper -= kg;
-          costBasis = Math.max(0, costBasis - (kg * avgBuy));
+          if (costBasis > 0 && avgBuy > 0) {
+            costBasis = Math.max(0, costBasis - (kg * avgBuy));
+          }
+
+          // The trading profit from selling copper is realized by this transaction
+          tx.profitVal = profit > 0 ? profit : undefined;
+          totalRealizedProfit += profit;
 
           if (isPending) {
             inTransitChecks += total;
             blockedCopper += 1;
           } else {
             runningCash += total;
-            totalRealizedProfit += profit;
-            tx.profitVal = profit > 0 ? Math.round(profit) : undefined;
           }
         } else if (tx.type === 'check_register') {
           if (isPending) {
@@ -786,6 +826,16 @@ export default function App() {
       cust.realizedProfit = Math.round(totalRealizedProfit);
       if (runningCopper > 0 && costBasis > 0) {
         cust.averageBuyPrice = Math.round(costBasis / runningCopper);
+      } else if (lastKnownBuyRate > 0) {
+        cust.averageBuyPrice = Math.round(lastKnownBuyRate);
+      }
+
+      // Calculate cumulative profit percentage accurately
+      const totalBuyVolume = custTxs.filter(t => t.type === 'buy').reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+      if (totalBuyVolume > 0 && totalRealizedProfit > 0) {
+        cust.profitChangePercent = Number(((totalRealizedProfit / totalBuyVolume) * 100).toFixed(1));
+      } else if (totalRealizedProfit === 0) {
+        cust.profitChangePercent = 0;
       }
 
       custMap.set(custId, cust);
@@ -845,6 +895,14 @@ export default function App() {
       setTransactions(updatedTransactions);
       localStorage.setItem('vateh_customers_v5', JSON.stringify(updatedCustomers));
       localStorage.setItem('vateh_transactions_v5', JSON.stringify(updatedTransactions));
+
+      // Sync calibrated records to Supabase in background
+      try {
+        await supabase.from('customers').upsert(updatedCustomers.map(mapCustomerToDb));
+        await supabase.from('transactions').upsert(updatedTransactions.map(mapTransactionToDb));
+      } catch (syncNotice) {
+        console.log('Reload sync notice:', syncNotice);
+      }
 
       if (settingsData) {
         if (settingsData.company_warehouse_copper !== undefined) {
@@ -1120,7 +1178,7 @@ export default function App() {
       const newAvg = (totalOldCost + totalNewCost) / (newWeight || 1);
       const afterCash = currentWallet - totalCost;
 
-      const txDate = buyDate || getTodayShamsi();
+      const txDate = normalizeShamsiDate(buyDate || getTodayShamsi());
 
       const newTx: Transaction = {
         id: 'tx_' + Date.now(),
@@ -1217,7 +1275,7 @@ export default function App() {
         return;
       }
 
-      const txDate = sellDate || getTodayShamsi();
+      const txDate = normalizeShamsiDate(sellDate || getTodayShamsi());
       const txTime = new Date().toLocaleTimeString('fa-IR');
 
       if (sellModel === 'individual') {
@@ -1232,7 +1290,8 @@ export default function App() {
         }
 
         const totalRevenue = kg * sellRate;
-        const profit = (sellRate - client.averageBuyPrice) * kg;
+        const costPrice = client.averageBuyPrice > 0 ? client.averageBuyPrice : buyCopperPrice;
+        const profit = costPrice > 0 ? (sellRate - costPrice) * kg : 0;
 
         let desc = sellDestination === 'internal' 
           ? 'فروش داخلی (تحویل به انبار شرکت مس و اته)' 
@@ -1542,7 +1601,7 @@ export default function App() {
         desc += ` | شرح: ${depositDesc.trim()}`;
       }
 
-      const txDate = depositDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
+      const txDate = normalizeShamsiDate(depositDate || getTodayShamsi());
 
       const newTx: Transaction = {
         id: 'tx_' + Date.now(),
@@ -1627,7 +1686,7 @@ export default function App() {
         return;
       }
 
-      const txDate = withdrawDate || new Intl.DateTimeFormat('fa-IR-u-nu-latn').format(new Date());
+      const txDate = normalizeShamsiDate(withdrawDate || getTodayShamsi());
 
       const newTx: Transaction = {
         id: 'tx_' + Date.now(),
@@ -1832,7 +1891,7 @@ export default function App() {
         return;
       }
 
-      const txDate = adjustDate || getTodayShamsi();
+      const txDate = normalizeShamsiDate(adjustDate || getTodayShamsi());
       let finalized: Customer[] = [];
       let newTx: Transaction;
 
@@ -2129,7 +2188,7 @@ export default function App() {
         amountKg: newWeight > 0 ? newWeight : undefined,
         ratePerKg: newRate > 0 ? newRate : undefined,
         totalAmount: newTotal,
-        date: editDateInput || origTx.date,
+        date: normalizeShamsiDate(editDateInput || origTx.date),
         description: updatedDesc,
       };
 
@@ -2846,8 +2905,12 @@ export default function App() {
       );
     })
     .sort((a, b) => {
+      const da = normalizeShamsiDate(a.date);
+      const db = normalizeShamsiDate(b.date);
       if (txSortOrder === 'date_asc') {
-        return a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '');
+        const dateComp = da.localeCompare(db);
+        if (dateComp !== 0) return dateComp;
+        return (a.time || '').localeCompare(b.time || '');
       }
       if (txSortOrder === 'amount_desc') {
         return (b.totalAmount || 0) - (a.totalAmount || 0);
@@ -2855,8 +2918,10 @@ export default function App() {
       if (txSortOrder === 'amount_asc') {
         return (a.totalAmount || 0) - (b.totalAmount || 0);
       }
-      // Default: date_desc
-      return b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || '');
+      // Default: date_desc (newest to oldest)
+      const dateComp = db.localeCompare(da);
+      if (dateComp !== 0) return dateComp;
+      return (b.time || '').localeCompare(a.time || '');
     });
 
   // Render Login state if not logged in
@@ -3629,6 +3694,16 @@ export default function App() {
                             <td className="py-4 px-4 font-bold font-mono">
                               {tx.profitVal ? (
                                 <span className="text-emerald-600 block">+{formatNumber(tx.profitVal)} ت</span>
+                              ) : tx.type === 'sell' && tx.ratePerKg && tx.amountKg ? (
+                                (() => {
+                                  const cost = activeProfile?.averageBuyPrice || buyCopperPrice || 0;
+                                  const estProfit = cost > 0 ? (tx.ratePerKg - cost) * tx.amountKg : 0;
+                                  return estProfit > 0 ? (
+                                    <span className="text-emerald-600 block">+{formatNumber(Math.round(estProfit))} ت</span>
+                                  ) : (
+                                    <span className="text-slate-400 block font-normal">سربه‌سر</span>
+                                  );
+                                })()
                               ) : '-'}
                             </td>
                             <td className="py-4 px-4 font-bold font-mono text-slate-800">
