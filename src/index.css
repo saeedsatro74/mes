@@ -51,6 +51,16 @@
     border: none !important;
   }
 
+  .fixed.inset-0 > div {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
   .printable-area {
     position: static !important;
     width: 100% !important;

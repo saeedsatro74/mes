@@ -12,6 +12,11 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       window.location.reload();
     }
   });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((r) => r.update().catch(() => {}));
+    }).catch(() => {});
+  });
 }
 
 createRoot(document.getElementById('root')!).render(

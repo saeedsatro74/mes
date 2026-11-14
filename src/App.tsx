@@ -387,6 +387,8 @@ export default function App() {
   const [pdfBackupTargetId, setPdfBackupTargetId] = useState<string>('all');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [readyPdfFile, setReadyPdfFile] = useState<{ url: string; filename: string } | null>(null);
+  const [pdfError, setPdfError] = useState<string>('');
+  const [webReportBlobUrl, setWebReportBlobUrl] = useState<string>('');
 
   // Sync reference rates when they are modified
   useEffect(() => {
@@ -2492,7 +2494,10 @@ export default function App() {
   };
 
   // Build isolated pure-hex HTML report for either Full System ('all') or Single Account (customerId)
-  const buildBackupReportHtml = (targetCustId: string = 'all'): { html: string; filenameBase: string; title: string } => {
+  const buildBackupReportHtml = (
+    targetCustId: string = 'all',
+    options?: { forWebView?: boolean }
+  ): { html: string; bodyHtml: string; cssText: string; filenameBase: string; title: string } => {
     const todayShamsi = getTodayShamsi();
     const dateSlug = todayShamsi.replace(/\//g, '-');
     const targetCustomer = targetCustId !== 'all' ? customers.find(c => c.id === targetCustId) : null;
@@ -2559,36 +2564,81 @@ export default function App() {
         </div>
       `;
 
-    const html = `
-      <!DOCTYPE html>
-      <html dir="rtl" lang="fa">
-      <head>
-        <meta charset="utf-8">
-        <title>${reportTitle} - ${todayShamsi}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700;900&display=swap" rel="stylesheet">
-        <style>
-          @page { size: A4 portrait; margin: 10mm; }
-          * { box-sizing: border-box; }
-          body {
-            font-family: 'Vazirmatn', Tahoma, sans-serif;
-            background: #ffffff;
-            color: #0f172a;
-            direction: rtl;
-            padding: 18px;
-            margin: 0;
-            width: 100%;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 10.5px; }
-          th, td { border: 1px solid #cbd5e1; padding: 6px 7px; text-align: right; vertical-align: top; }
-          th { background-color: #f1f5f9; font-weight: 800; color: #0f172a; }
-          .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0 18px 0; }
-          .card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; }
-          tr { page-break-inside: avoid; }
-        </style>
-      </head>
-      <body>
+    const cssText = `
+      @page { size: A4 portrait; margin: 10mm; }
+      * { box-sizing: border-box; }
+      body, #pdf-capture-root {
+        font-family: 'Vazirmatn', Tahoma, sans-serif;
+        background: #ffffff;
+        color: #0f172a;
+        direction: rtl;
+        padding: 18px;
+        margin: 0;
+        width: 100%;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .web-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: #0f172a;
+        color: #ffffff;
+        padding: 12px 16px;
+        border-radius: 12px;
+        margin-bottom: 18px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+      }
+      .web-btn {
+        border: 0;
+        border-radius: 10px;
+        padding: 9px 16px;
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+        color: #ffffff;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .web-btn-print { background: #059669; }
+      .web-btn-dl { background: #2563eb; }
+      @media print {
+        .no-print { display: none !important; }
+        body { padding: 0 !important; margin: 0 !important; }
+      }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 10.5px; }
+      th, td { border: 1px solid #cbd5e1; padding: 6px 7px; text-align: right; vertical-align: top; }
+      th { background-color: #f1f5f9; font-weight: 800; color: #0f172a; }
+      .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0 18px 0; }
+      .card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; }
+      tr { page-break-inside: avoid; }
+    `;
+
+    const webToolbarHtml = options?.forWebView
+      ? `
+        <div class="web-toolbar no-print">
+          <div style="font-size: 12px; font-weight: 800;">
+            <span>📄 ${reportTitle}</span>
+            <span style="display:block; font-size: 10px; font-weight: 400; color: #94a3b8; margin-top: 2px;">در پنجره چاپ می‌توانید گزینه «Save as PDF / ذخیره به عنوان PDF» را انتخاب کنید.</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <button type="button" class="web-btn web-btn-print" onclick="window.print()">چاپ / ذخیره به عنوان PDF</button>
+            <button type="button" class="web-btn web-btn-dl" onclick="(function(){ var b = new Blob([document.documentElement.outerHTML], {type:'text/html;charset=utf-8'}); var u = URL.createObjectURL(b); var a = document.createElement('a'); a.href = u; a.download = '${filenameBase}.html'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(u); }, 5000); })()">دانلود فایل گزارش (HTML)</button>
+          </div>
+        </div>
+      `
+      : '';
+
+    const bodyHtml = `
+        ${webToolbarHtml}
         <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 14px;">
           <div>
             <h1 style="margin: 0; font-size: 17px; font-weight: 900; color: #0f172a;">${reportTitle}</h1>
@@ -2732,122 +2782,130 @@ export default function App() {
             <div style="height: 36px;"></div>
           </div>
         </div>
-      </body>
-      </html>
     `;
 
-    return { html, filenameBase, title: reportTitle };
+    const html = `<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${reportTitle} - ${todayShamsi}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700;900&display=swap" rel="stylesheet">
+  <style data-pdf-style="1">${cssText}</style>
+</head>
+<body>${bodyHtml}</body>
+</html>`;
+
+    return { html, bodyHtml, cssText, filenameBase, title: reportTitle };
   };
 
-  // Print / Save as PDF via off-screen same-origin iframe (avoids popup blockers & opacity-0 blank prints)
+  // Sync Blob URL for standalone web report tab (<a target="_blank">) whenever PDF modal is active
+  useEffect(() => {
+    if (activeModal !== 'pdf_backup') {
+      setWebReportBlobUrl(prev => {
+        if (prev) setTimeout(() => URL.revokeObjectURL(prev), 60000);
+        return '';
+      });
+      setPdfError('');
+      return;
+    }
+
+    const effectiveId = currentUser?.role === 'customer' ? currentUser.id : (pdfBackupTargetId || 'all');
+    const { html } = buildBackupReportHtml(effectiveId, { forWebView: true });
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    setWebReportBlobUrl(prev => {
+      if (prev) setTimeout(() => URL.revokeObjectURL(prev), 60000);
+      return url;
+    });
+  }, [activeModal, pdfBackupTargetId, currentUser, customers, transactions, buyCopperPrice, companyWarehouseCopper]);
+
+  // Open standalone web report tab (<a target="_blank" rel="noopener noreferrer">) or print active modal
   const handleOpenPdfPrintWindow = (targetId?: string) => {
-    const scopeId = targetId || (currentUser?.role === 'customer' ? currentUser.id : pdfBackupTargetId) || 'all';
-    const { html } = buildBackupReportHtml(scopeId);
-
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.left = '-10000px';
-    iframe.style.top = '0';
-    iframe.style.width = '794px';
-    iframe.style.height = '1123px';
-    iframe.style.opacity = '1';
-    iframe.style.pointerEvents = 'none';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!doc || !iframe.contentWindow) {
-      iframe.remove();
+    if (activeModal === 'pdf_backup' || activeModal === 'receipt') {
       window.print();
       return;
     }
 
-    doc.open();
-    doc.write(html);
-    doc.close();
+    const scopeId = targetId || (currentUser?.role === 'customer' ? currentUser.id : pdfBackupTargetId) || 'all';
+    const { html } = buildBackupReportHtml(scopeId, { forWebView: true });
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
 
-    const triggerPrint = async () => {
-      try {
-        if (doc.fonts?.ready) {
-          await Promise.race([doc.fonts.ready, new Promise(r => setTimeout(r, 900))]);
-        }
-      } catch {
-        // Ignore font readiness issues
-      }
-      setTimeout(() => {
-        try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        } catch (err) {
-          console.error('Iframe print error:', err);
-          window.print();
-        }
-        setTimeout(() => {
-          if (document.body.contains(iframe)) {
-            iframe.remove();
-          }
-        }, 60000);
-      }, 300);
-    };
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
 
-    triggerPrint();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
-  // Direct multi-page A4 PDF Download using off-screen pure-hex iframe + static libs + blob link fallback
+  // Direct multi-page A4 PDF Download via in-document pure-hex container + onclone stylesheet stripping
   const handleDownloadPdfBackup = async (targetId?: string) => {
     const scopeId = targetId || (currentUser?.role === 'customer' ? currentUser.id : pdfBackupTargetId) || 'all';
     const nowTs = Date.now();
     localStorage.setItem('vateh_last_backup_time', nowTs.toString());
     setLastBackupTime(nowTs);
     setIsGeneratingPdf(true);
+    setPdfError('');
 
     if (readyPdfFile?.url) {
       URL.revokeObjectURL(readyPdfFile.url);
       setReadyPdfFile(null);
     }
 
-    const { html, filenameBase } = buildBackupReportHtml(scopeId);
+    const { bodyHtml, cssText, filenameBase } = buildBackupReportHtml(scopeId, { forWebView: false });
     const filename = `${filenameBase}.pdf`;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.left = '-10000px';
-    iframe.style.top = '0';
-    iframe.style.width = '794px';
-    iframe.style.height = '1123px';
-    iframe.style.opacity = '1';
-    iframe.style.pointerEvents = 'none';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
+    const captureRoot = document.createElement('div');
+    captureRoot.id = 'pdf-capture-root';
+    captureRoot.setAttribute('dir', 'rtl');
+    captureRoot.style.position = 'fixed';
+    captureRoot.style.left = '-10000px';
+    captureRoot.style.top = '0';
+    captureRoot.style.width = '794px';
+    captureRoot.style.background = '#ffffff';
+    captureRoot.style.color = '#0f172a';
+    captureRoot.style.direction = 'rtl';
+    captureRoot.style.fontFamily = "'Vazirmatn', Tahoma, sans-serif";
+    captureRoot.style.zIndex = '-1';
+    captureRoot.style.pointerEvents = 'none';
+    captureRoot.innerHTML = `<style data-pdf-style="1">${cssText}</style>${bodyHtml}`;
+    document.body.appendChild(captureRoot);
 
     try {
-      const doc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!doc) throw new Error('Unable to access isolated print frame');
-
-      doc.open();
-      doc.write(html);
-      doc.close();
-
       try {
-        if (doc.fonts?.ready) {
-          await Promise.race([doc.fonts.ready, new Promise(r => setTimeout(r, 900))]);
+        if (document.fonts?.ready) {
+          await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 800))]);
         }
       } catch {
         // Ignore font readiness issues
       }
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 200));
 
-      const fullHeight = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 1123);
-      const canvas = await html2canvas(doc.body, {
+      const fullHeight = Math.max(captureRoot.scrollHeight, 1123);
+      const canvas = await html2canvas(captureRoot, {
         scale: 2,
-        useCORS: true,
+        useCORS: false,
         allowTaint: false,
         backgroundColor: '#ffffff',
         width: 794,
         windowWidth: 794,
         height: fullHeight,
         windowHeight: fullHeight,
-        logging: false
+        logging: false,
+        onclone: (clonedDoc) => {
+          clonedDoc.querySelectorAll('style, link[rel="stylesheet"]').forEach((el) => {
+            if (!el.hasAttribute('data-pdf-style')) {
+              el.remove();
+            }
+          });
+        }
       });
 
       if (!canvas || canvas.width === 0 || canvas.height === 0) {
@@ -2909,20 +2967,21 @@ export default function App() {
 
       setToastMessage({
         title: 'فایل PDF آماده و ذخیره شد ✓',
-        desc: `فایل «${filename}» تولید شد. در صورت مسدود شدن دانلود خودکار مرورگر، روی دکمه سبز ذخیره در بالای پنجره کلیک کنید.`,
+        desc: `فایل «${filename}» تولید شد. در صورت مسدود شدن دانلود در مرورگر، از دکمه‌های بالای پنجره استفاده کنید.`,
         type: 'success'
       });
     } catch (err) {
       console.error('PDF export error:', err);
+      setPdfError('تولید خودکار فایل PDF در این مرورگر با محدودیت مواجه شد. لطفاً از دکمه «باز کردن در صفحه وب (چاپ / دانلود PDF)» استفاده نمایید.');
       setToastMessage({
         title: 'خطا در تولید مستقیم PDF',
-        desc: 'لطفاً از دکمه «چاپ / ذخیره PDF مرورگر» استفاده نمایید.',
+        desc: 'از دکمه سبز «باز کردن در صفحه وب (چاپ / دانلود PDF)» استفاده نمایید.',
         type: 'error'
       });
     } finally {
       setIsGeneratingPdf(false);
-      if (document.body.contains(iframe)) {
-        document.body.removeChild(iframe);
+      if (document.body.contains(captureRoot)) {
+        document.body.removeChild(captureRoot);
       }
     }
   };
@@ -3385,7 +3444,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans selection:bg-amber-100 text-slate-900" dir="rtl">
       
       {/* HEADER BAR */}
-      <header className="sticky top-0 bg-white border-b border-slate-200 z-30 shadow-sm px-3 md:px-6 py-2 flex items-center justify-between gap-2 md:gap-4">
+      <header className={`sticky top-0 bg-white border-b border-slate-200 z-30 shadow-sm px-3 md:px-6 py-2 flex items-center justify-between gap-2 md:gap-4 ${(activeModal === 'pdf_backup' || activeModal === 'receipt') ? 'no-print' : ''}`}>
         {/* Vateh Logo */}
         <div className="flex items-center gap-1.5 shrink-0">
           <WattehLogo size={28} showBg={true} className="rounded-md" />
@@ -3513,7 +3572,7 @@ export default function App() {
       </header>
 
       {/* MAIN CONTAINER */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 lg:p-6 space-y-4">
+      <main className={`flex-1 max-w-7xl w-full mx-auto p-3 lg:p-6 space-y-4 ${(activeModal === 'pdf_backup' || activeModal === 'receipt') ? 'no-print' : ''}`}>
 
         {/* =========================================
             ADMIN ROSTER PAGE (IMAGE 2 REPLICA)
@@ -7939,7 +7998,7 @@ export default function App() {
 
       {/* 16. TOAST NOTIFICATION: Feedback for users */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 left-5 md:left-auto md:w-96 z-50 animate-in fade-in slide-in-from-bottom-5 duration-200" dir="rtl">
+        <div className="fixed bottom-5 right-5 left-5 md:left-auto md:w-96 z-[100] animate-in fade-in slide-in-from-bottom-5 duration-200" dir="rtl">
           <div className={`p-4 rounded-2xl shadow-2xl border flex items-start gap-3 ${
             toastMessage.type === 'success' 
               ? 'bg-slate-900 text-white border-emerald-500' 
@@ -8012,6 +8071,7 @@ export default function App() {
                           URL.revokeObjectURL(readyPdfFile.url);
                           setReadyPdfFile(null);
                         }
+                        setPdfError('');
                         setPdfBackupTargetId(e.target.value);
                       }}
                       className="bg-slate-800 text-white border border-slate-700 rounded-xl px-3 py-2 text-xs font-extrabold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
@@ -8023,6 +8083,18 @@ export default function App() {
                         </option>
                       ))}
                     </select>
+                  )}
+
+                  {webReportBlobUrl && (
+                    <a
+                      href={webReportBlobUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 text-xs shadow cursor-pointer"
+                    >
+                      <Printer className="w-4 h-4 text-emerald-100" />
+                      <span>باز کردن در صفحه وب (چاپ / دانلود PDF)</span>
+                    </a>
                   )}
 
                   <button
@@ -8047,10 +8119,11 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => handleOpenPdfPrintWindow(effectiveBackupTargetId)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 text-xs shadow cursor-pointer"
+                    className="bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 text-xs shadow cursor-pointer"
+                    title="چاپ مستقیم این صفحه"
                   >
-                    <Printer className="w-4 h-4 text-emerald-100" />
-                    <span>چاپ / ذخیره PDF مرورگر</span>
+                    <Printer className="w-3.5 h-3.5 text-slate-200" />
+                    <span>چاپ فوری</span>
                   </button>
 
                   <button
@@ -8060,7 +8133,7 @@ export default function App() {
                     title="دانلود فایل بک‌آپ ساخت‌یافته اطلاعات (JSON)"
                   >
                     <Database className="w-3.5 h-3.5 text-amber-100" />
-                    <span>دانلود فایل بک‌آپ (JSON)</span>
+                    <span>بک‌آپ JSON</span>
                   </button>
 
                   <button 
@@ -8070,6 +8143,7 @@ export default function App() {
                         URL.revokeObjectURL(readyPdfFile.url);
                         setReadyPdfFile(null);
                       }
+                      setPdfError('');
                       setActiveModal(null);
                     }}
                     className="text-slate-400 hover:text-white hover:bg-slate-800 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer"
@@ -8079,20 +8153,51 @@ export default function App() {
                 </div>
               </div>
 
+              {pdfError && (
+                <div className="bg-rose-50 border-b border-rose-200 px-5 py-3 flex flex-wrap items-center justify-between gap-2 no-print">
+                  <span className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>{pdfError}</span>
+                  </span>
+                  {webReportBlobUrl && (
+                    <a
+                      href={webReportBlobUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>باز کردن در صفحه وب (چاپ / دانلود PDF)</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
               {readyPdfFile && (
                 <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-3 flex flex-wrap items-center justify-between gap-2 no-print">
                   <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>فایل PDF با موفقیت ساخته شد! اگر دانلود به‌صورت خودکار شروع نشد، از دکمه روبرو استفاده کنید:</span>
+                    <span>فایل PDF آماده شد! می‌توانید مستقیم دانلود کنید یا در تب جدید وب باز کنید:</span>
                   </span>
-                  <a
-                    href={readyPdfFile.url}
-                    download={readyPdfFile.filename}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>ذخیره فایل PDF ({readyPdfFile.filename})</span>
-                  </a>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={readyPdfFile.url}
+                      download={readyPdfFile.filename}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>ذخیره فایل PDF ({readyPdfFile.filename})</span>
+                    </a>
+                    <a
+                      href={readyPdfFile.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>باز کردن PDF در تب جدید</span>
+                    </a>
+                  </div>
                 </div>
               )}
 
