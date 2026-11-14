@@ -6,6 +6,7 @@ import {VitePWA} from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
+    base: './',
     plugins: [
       react(),
       tailwindcss(),
@@ -13,30 +14,30 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
         manifest: {
-          id: '/',
+          id: './',
           name: 'واته - سامانه معاملات مس',
           short_name: 'واته',
           description: 'سامانه هوشمند خرید و فروش مس کاتد و مدیریت حساب‌های معاملاتی مشتریان',
           theme_color: '#0B72E7',
           background_color: '#ffffff',
           display: 'standalone',
-          start_url: '/',
-          scope: '/',
+          start_url: './',
+          scope: './',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: 'pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: 'pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: 'pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
@@ -49,6 +50,7 @@ export default defineConfig(() => {
           skipWaiting: true,
           clientsClaim: true,
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          ignoreURLParametersMatching: [/^web_backup$/, /^scope$/, /^autoprint$/],
         },
         devOptions: {
           enabled: false,

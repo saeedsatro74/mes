@@ -388,7 +388,19 @@ export default function App() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [readyPdfFile, setReadyPdfFile] = useState<{ url: string; filename: string } | null>(null);
   const [pdfError, setPdfError] = useState<string>('');
-  const [webReportBlobUrl, setWebReportBlobUrl] = useState<string>('');
+  const [isInitialDbSynced, setIsInitialDbSynced] = useState<boolean>(false);
+  const hasAutoPrintedWebBackupRef = useRef<boolean>(false);
+
+  // Dedicated web-backup route mode: /?web_backup=1&scope=all|<custId>&autoprint=1
+  const urlSearchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isWebBackupPage = urlSearchParams?.get('web_backup') === '1';
+  const webBackupScopeParam = urlSearchParams?.get('scope') || 'all';
+  const shouldAutoPrintWebBackup = urlSearchParams?.get('autoprint') === '1';
+
+  const getWebBackupPageUrl = (scope: string, autoprint: boolean = true): string => {
+    if (typeof window === 'undefined') return '#';
+    return `${window.location.origin}${window.location.pathname}?web_backup=1&scope=${encodeURIComponent(scope || 'all')}${autoprint ? '&autoprint=1' : ''}`;
+  };
 
   // Sync reference rates when they are modified
   useEffect(() => {
@@ -542,6 +554,10 @@ export default function App() {
         }
       } catch (err) {
         console.log('Supabase sync notice:', err);
+      } finally {
+        if (isMounted) {
+          setIsInitialDbSynced(true);
+        }
       }
     }
 
@@ -593,6 +609,7 @@ export default function App() {
   // Sync customers to Supabase
   const isInitialCustomerSync = useRef(true);
   useEffect(() => {
+    if (isWebBackupPage) return;
     localStorage.setItem('vateh_customers_v5', JSON.stringify(customers));
     if (isInitialCustomerSync.current) {
       isInitialCustomerSync.current = false;
@@ -605,6 +622,7 @@ export default function App() {
   // Sync transactions to Supabase
   const isInitialTxSync = useRef(true);
   useEffect(() => {
+    if (isWebBackupPage) return;
     localStorage.setItem('vateh_transactions_v5', JSON.stringify(transactions));
     if (isInitialTxSync.current) {
       isInitialTxSync.current = false;
@@ -615,6 +633,22 @@ export default function App() {
       supabase.from('transactions').upsert(dbPayload).then();
     }
   }, [transactions]);
+
+  // Auto-open browser print dialog when opened on dedicated /?web_backup=1&autoprint=1 page
+  useEffect(() => {
+    if (!isWebBackupPage || !isInitialDbSynced || !shouldAutoPrintWebBackup || hasAutoPrintedWebBackupRef.current) {
+      return;
+    }
+    hasAutoPrintedWebBackupRef.current = true;
+    const timer = setTimeout(() => {
+      try {
+        window.print();
+      } catch (err) {
+        console.error('Auto print notice:', err);
+      }
+    }, 550);
+    return () => clearTimeout(timer);
+  }, [isWebBackupPage, isInitialDbSynced, shouldAutoPrintWebBackup]);
 
   // Persist settings to localStorage (Supabase writes are handled explicitly with await in each action)
   useEffect(() => {
@@ -2799,50 +2833,30 @@ export default function App() {
     return { html, bodyHtml, cssText, filenameBase, title: reportTitle };
   };
 
-  // Sync Blob URL for standalone web report tab (<a target="_blank">) whenever PDF modal is active
   useEffect(() => {
     if (activeModal !== 'pdf_backup') {
-      setWebReportBlobUrl(prev => {
-        if (prev) setTimeout(() => URL.revokeObjectURL(prev), 60000);
-        return '';
-      });
       setPdfError('');
-      return;
     }
+  }, [activeModal]);
 
-    const effectiveId = currentUser?.role === 'customer' ? currentUser.id : (pdfBackupTargetId || 'all');
-    const { html } = buildBackupReportHtml(effectiveId, { forWebView: true });
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-
-    setWebReportBlobUrl(prev => {
-      if (prev) setTimeout(() => URL.revokeObjectURL(prev), 60000);
-      return url;
-    });
-  }, [activeModal, pdfBackupTargetId, currentUser, customers, transactions, buyCopperPrice, companyWarehouseCopper]);
-
-  // Open standalone web report tab (<a target="_blank" rel="noopener noreferrer">) or print active modal
+  // Open dedicated real-site printable backup tab (auto-triggers Print / Save as PDF) or print active modal
   const handleOpenPdfPrintWindow = (targetId?: string) => {
-    if (activeModal === 'pdf_backup' || activeModal === 'receipt') {
+    if (activeModal === 'receipt') {
       window.print();
       return;
     }
 
     const scopeId = targetId || (currentUser?.role === 'customer' ? currentUser.id : pdfBackupTargetId) || 'all';
-    const { html } = buildBackupReportHtml(scopeId, { forWebView: true });
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+    const webUrl = getWebBackupPageUrl(scopeId, true);
 
     const link = document.createElement('a');
-    link.href = url;
+    link.href = webUrl;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     link.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
   // Direct multi-page A4 PDF Download via in-document pure-hex container + onclone stylesheet stripping
@@ -3276,6 +3290,118 @@ export default function App() {
       if (dateComp !== 0) return dateComp;
       return (b.time || '').localeCompare(a.time || '');
     });
+
+  // Render Dedicated Web Backup & Auto-Print View (when opened via /?web_backup=1&scope=...&autoprint=1)
+  if (isWebBackupPage) {
+    const { bodyHtml, cssText, filenameBase } = buildBackupReportHtml(webBackupScopeParam, { forWebView: false });
+    const homeUrl = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : '/';
+    return (
+      <div className="min-h-screen bg-white text-slate-900" dir="rtl">
+        <style>{cssText}</style>
+
+        {/* Sticky Print / Save Action Bar (Hidden on Print) */}
+        <div className="no-print sticky top-0 z-50 bg-slate-900 text-white px-4 py-3 shadow-lg flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <WattehLogo size={28} showBg={true} className="rounded-md shrink-0" />
+            <div>
+              <div className="text-xs sm:text-sm font-black">صفحه رسمی چاپ و ذخیره PDF گزارش / بک‌آپ واته</div>
+              <div className="text-[10px] text-slate-300">
+                {!isInitialDbSynced
+                  ? 'در حال دریافت آخرین اطلاعات از پایگاه داده...'
+                  : 'در پنجره پرینت مرورگر، مقصد (Destination) را روی «Save as PDF / ذخیره به عنوان PDF» بگذارید.'}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span>پرینت / ذخیره PDF</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isGeneratingPdf || !isInitialDbSynced}
+              onClick={() => handleDownloadPdfBackup(webBackupScopeParam)}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-black text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isGeneratingPdf ? 'در حال ساخت PDF...' : 'دانلود مستقیم فایل PDF'}</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={!isInitialDbSynced}
+              onClick={() => {
+                const htmlBlob = new Blob([buildBackupReportHtml(webBackupScopeParam, { forWebView: true }).html], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(htmlBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filenameBase}.html`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+              }}
+              className="bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 shadow cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>دانلود فایل گزارش (HTML)</span>
+            </button>
+
+            <a
+              href={homeUrl}
+              className="bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs px-3 py-2 rounded-xl transition"
+            >
+              بازگشت به داشبورد
+            </a>
+          </div>
+        </div>
+
+        {!isInitialDbSynced ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-600">
+            <div className="w-8 h-8 border-4 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-sm font-bold">در حال دریافت اطلاعات به‌روز از دیتابیس برای چاپ و بک‌آپ...</span>
+          </div>
+        ) : (
+          <div className="max-w-4xl mx-auto p-4 sm:p-8 bg-white">
+            {pdfError && (
+              <div className="no-print mb-4 bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs font-bold text-rose-900">
+                {pdfError}
+              </div>
+            )}
+            {readyPdfFile && (
+              <div className="no-print mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-black text-emerald-900">فایل PDF آماده شد:</span>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={readyPdfFile.url}
+                    download={readyPdfFile.filename}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-lg"
+                  >
+                    ذخیره فایل ({readyPdfFile.filename})
+                  </a>
+                  <a
+                    href={readyPdfFile.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-4 py-2 rounded-lg"
+                  >
+                    باز کردن در تب جدید
+                  </a>
+                </div>
+              </div>
+            )}
+            <div dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // Render Login state if not logged in
   if (!currentUser) {
@@ -8099,17 +8225,15 @@ export default function App() {
                     </select>
                   )}
 
-                  {webReportBlobUrl && (
-                    <a
-                      href={webReportBlobUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 text-xs shadow cursor-pointer"
-                    >
-                      <Printer className="w-4 h-4 text-emerald-100" />
-                      <span>باز کردن در صفحه وب (چاپ / دانلود PDF)</span>
-                    </a>
-                  )}
+                  <a
+                    href={getWebBackupPageUrl(effectiveBackupTargetId, true)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 text-xs shadow cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-emerald-100" />
+                    <span>باز کردن در سایت و پرینت / ذخیره PDF</span>
+                  </a>
 
                   <button
                     type="button"
@@ -8132,12 +8256,12 @@ export default function App() {
 
                   <button
                     type="button"
-                    onClick={() => handleOpenPdfPrintWindow(effectiveBackupTargetId)}
+                    onClick={() => window.print()}
                     className="bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 text-xs shadow cursor-pointer"
-                    title="چاپ مستقیم این صفحه"
+                    title="چاپ مستقیم همین پنجره"
                   >
                     <Printer className="w-3.5 h-3.5 text-slate-200" />
-                    <span>چاپ فوری</span>
+                    <span>پرینت همین پنجره</span>
                   </button>
 
                   <button
@@ -8173,17 +8297,15 @@ export default function App() {
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                     <span>{pdfError}</span>
                   </span>
-                  {webReportBlobUrl && (
-                    <a
-                      href={webReportBlobUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition"
-                    >
-                      <Printer className="w-4 h-4" />
-                      <span>باز کردن در صفحه وب (چاپ / دانلود PDF)</span>
-                    </a>
-                  )}
+                  <a
+                    href={getWebBackupPageUrl(effectiveBackupTargetId, true)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>باز کردن در سایت و پرینت / ذخیره PDF</span>
+                  </a>
                 </div>
               )}
 
