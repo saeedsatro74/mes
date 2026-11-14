@@ -43,6 +43,8 @@ import {
   EyeOff,
   RefreshCw
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { supabase, DbCustomer, DbTransaction, DbCompanySettings } from './lib/supabase';
 import { ShamsiDatePicker, toEnglishDigits, toPersianDigits, getTodayShamsi, getOffsetShamsiDate, getPersianDayOfWeek, normalizeShamsiDate, compareShamsiDates } from './components/ShamsiDatePicker';
 import { WattehLogo } from './components/WattehLogo';
@@ -384,6 +386,7 @@ export default function App() {
   });
   const [pdfBackupTargetId, setPdfBackupTargetId] = useState<string>('all');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [readyPdfFile, setReadyPdfFile] = useState<{ url: string; filename: string } | null>(null);
 
   // Sync reference rates when they are modified
   useEffect(() => {
@@ -2736,21 +2739,20 @@ export default function App() {
     return { html, filenameBase, title: reportTitle };
   };
 
-  // Print / Save as PDF via hidden same-origin iframe (avoids popup blockers in iFrame)
+  // Print / Save as PDF via off-screen same-origin iframe (avoids popup blockers & opacity-0 blank prints)
   const handleOpenPdfPrintWindow = (targetId?: string) => {
     const scopeId = targetId || (currentUser?.role === 'customer' ? currentUser.id : pdfBackupTargetId) || 'all';
     const { html } = buildBackupReportHtml(scopeId);
 
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
+    iframe.style.left = '-10000px';
+    iframe.style.top = '0';
     iframe.style.width = '794px';
     iframe.style.height = '1123px';
-    iframe.style.opacity = '0';
+    iframe.style.opacity = '1';
     iframe.style.pointerEvents = 'none';
     iframe.style.border = '0';
-    iframe.style.zIndex = '-1';
     document.body.appendChild(iframe);
 
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -2767,7 +2769,7 @@ export default function App() {
     const triggerPrint = async () => {
       try {
         if (doc.fonts?.ready) {
-          await doc.fonts.ready;
+          await Promise.race([doc.fonts.ready, new Promise(r => setTimeout(r, 900))]);
         }
       } catch {
         // Ignore font readiness issues
@@ -2785,13 +2787,13 @@ export default function App() {
             iframe.remove();
           }
         }, 60000);
-      }, 350);
+      }, 300);
     };
 
     triggerPrint();
   };
 
-  // Direct multi-page A4 PDF Download using isolated same-origin iframe (prevents Tailwind v4 oklch crashes in html2canvas)
+  // Direct multi-page A4 PDF Download using off-screen pure-hex iframe + static libs + blob link fallback
   const handleDownloadPdfBackup = async (targetId?: string) => {
     const scopeId = targetId || (currentUser?.role === 'customer' ? currentUser.id : pdfBackupTargetId) || 'all';
     const nowTs = Date.now();
@@ -2799,19 +2801,23 @@ export default function App() {
     setLastBackupTime(nowTs);
     setIsGeneratingPdf(true);
 
+    if (readyPdfFile?.url) {
+      URL.revokeObjectURL(readyPdfFile.url);
+      setReadyPdfFile(null);
+    }
+
     const { html, filenameBase } = buildBackupReportHtml(scopeId);
     const filename = `${filenameBase}.pdf`;
 
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
+    iframe.style.left = '-10000px';
+    iframe.style.top = '0';
     iframe.style.width = '794px';
     iframe.style.height = '1123px';
-    iframe.style.opacity = '0';
+    iframe.style.opacity = '1';
     iframe.style.pointerEvents = 'none';
     iframe.style.border = '0';
-    iframe.style.zIndex = '-1';
     document.body.appendChild(iframe);
 
     try {
@@ -2824,22 +2830,18 @@ export default function App() {
 
       try {
         if (doc.fonts?.ready) {
-          await doc.fonts.ready;
+          await Promise.race([doc.fonts.ready, new Promise(r => setTimeout(r, 900))]);
         }
       } catch {
         // Ignore font readiness issues
       }
-      await new Promise(r => setTimeout(r, 400));
-
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf')
-      ]);
+      await new Promise(r => setTimeout(r, 300));
 
       const fullHeight = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 1123);
       const canvas = await html2canvas(doc.body, {
         scale: 2,
         useCORS: true,
+        allowTaint: false,
         backgroundColor: '#ffffff',
         width: 794,
         windowWidth: 794,
@@ -2847,6 +2849,10 @@ export default function App() {
         windowHeight: fullHeight,
         logging: false
       });
+
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        throw new Error('Rendered PDF canvas is empty');
+      }
 
       const pdf = new jsPDF({
         unit: 'mm',
@@ -2888,11 +2894,22 @@ export default function App() {
         pageIndex += 1;
       }
 
-      pdf.save(filename);
+      const pdfBlob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      setReadyPdfFile({ url: blobUrl, filename });
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      link.rel = 'noopener';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
 
       setToastMessage({
-        title: 'دانلود موفق فایل PDF ✓',
-        desc: `فایل PDF پشتیبان «${filename}» با موفقیت تولید و ذخیره شد.`,
+        title: 'فایل PDF آماده و ذخیره شد ✓',
+        desc: `فایل «${filename}» تولید شد. در صورت مسدود شدن دانلود خودکار مرورگر، روی دکمه سبز ذخیره در بالای پنجره کلیک کنید.`,
         type: 'success'
       });
     } catch (err) {
@@ -7990,7 +8007,13 @@ export default function App() {
                   {currentUser.role === 'admin' && (
                     <select
                       value={effectiveBackupTargetId}
-                      onChange={(e) => setPdfBackupTargetId(e.target.value)}
+                      onChange={(e) => {
+                        if (readyPdfFile?.url) {
+                          URL.revokeObjectURL(readyPdfFile.url);
+                          setReadyPdfFile(null);
+                        }
+                        setPdfBackupTargetId(e.target.value);
+                      }}
                       className="bg-slate-800 text-white border border-slate-700 rounded-xl px-3 py-2 text-xs font-extrabold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     >
                       <option value="all">کل سامانه (همه حساب‌ها و انبار)</option>
@@ -8042,13 +8065,36 @@ export default function App() {
 
                   <button 
                     type="button"
-                    onClick={() => setActiveModal(null)}
+                    onClick={() => {
+                      if (readyPdfFile?.url) {
+                        URL.revokeObjectURL(readyPdfFile.url);
+                        setReadyPdfFile(null);
+                      }
+                      setActiveModal(null);
+                    }}
                     className="text-slate-400 hover:text-white hover:bg-slate-800 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
+
+              {readyPdfFile && (
+                <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-3 flex flex-wrap items-center justify-between gap-2 no-print">
+                  <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>فایل PDF با موفقیت ساخته شد! اگر دانلود به‌صورت خودکار شروع نشد، از دکمه روبرو استفاده کنید:</span>
+                  </span>
+                  <a
+                    href={readyPdfFile.url}
+                    download={readyPdfFile.filename}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>ذخیره فایل PDF ({readyPdfFile.filename})</span>
+                  </a>
+                </div>
+              )}
 
               {/* Printable Content Container */}
               <div id="pdf-backup-report" className="p-6 md:p-8 space-y-6 max-h-[80vh] overflow-y-auto printable-area bg-white text-slate-900">
