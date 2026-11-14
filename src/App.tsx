@@ -2898,6 +2898,8 @@ export default function App() {
         windowWidth: 794,
         height: fullHeight,
         windowHeight: fullHeight,
+        scrollX: 0,
+        scrollY: 0,
         logging: false,
         onclone: (clonedDoc) => {
           clonedDoc.querySelectorAll('style, link[rel="stylesheet"]').forEach((el) => {
@@ -2905,6 +2907,18 @@ export default function App() {
               el.remove();
             }
           });
+          const clonedRoot = clonedDoc.getElementById('pdf-capture-root');
+          if (clonedRoot) {
+            clonedRoot.style.position = 'static';
+            clonedRoot.style.left = '0';
+            clonedRoot.style.top = '0';
+            clonedRoot.style.zIndex = '1';
+            clonedDoc.body.style.margin = '0';
+            clonedDoc.body.style.padding = '0';
+            clonedDoc.body.style.background = '#ffffff';
+            clonedDoc.body.innerHTML = '';
+            clonedDoc.body.appendChild(clonedRoot);
+          }
         }
       });
 
